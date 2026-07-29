@@ -24,12 +24,11 @@ const defaultAssetUSD: Record<string, number> = {
   USDT: 1,
 };
 
-const cryptoPriceIds: Record<string, string> = {
-  BNB: "binancecoin",
-  ETH: "ethereum",
-  GRAM: "the-open-network",
-  MATIC: "polygon-ecosystem-token",
-  TRX: "tron",
+const cryptoSymbols: Record<string, string> = {
+  BNB: "BNBUSDT",
+  ETH: "ETHUSDT",
+  MATIC: "POLUSDT",
+  TRX: "TRXUSDT",
 };
 
 const defaultTimeoutMinutes = 5;
@@ -238,19 +237,38 @@ async function fetchFiatRates() {
 }
 
 async function fetchCryptoRates() {
-  const ids = Object.values(cryptoPriceIds);
-  const response = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(ids.join(","))}&vs_currencies=usd`, {
-    signal: timeoutSignal(5000),
-    headers: { accept: "application/json" },
-  });
-  if (!response.ok) throw new Error(`crypto rates status ${response.status}`);
-  const payload = await response.json<Record<string, { usd?: number }>>();
+  const signal = timeoutSignal(5000);
+  const [bybitResponse, tonResponse] = await Promise.all([
+    fetch("https://api.bybit.com/v5/market/tickers?category=spot", {
+      signal,
+      headers: { accept: "application/json" },
+    }),
+    fetch("https://api.coinbase.com/v2/exchange-rates?currency=TON", {
+      signal,
+      headers: { accept: "application/json" },
+    }),
+  ]);
+  if (!bybitResponse.ok || !tonResponse.ok) {
+    throw new Error(`crypto rates status ${bybitResponse.status}/${tonResponse.status}`);
+  }
+  const [bybit, ton] = await Promise.all([
+    bybitResponse.json<{
+      result?: { list?: Array<{ lastPrice?: string; symbol?: string }> };
+      retCode?: number;
+    }>(),
+    tonResponse.json<{ data?: { rates?: { USD?: string } } }>(),
+  ]);
+  if (bybit.retCode !== 0 || !bybit.result?.list) throw new Error("crypto rates unavailable");
+  const prices = new Map(bybit.result.list.map((ticker) => [ticker.symbol, Number(ticker.lastPrice)]));
   const rates: Record<string, number> = { ...defaultAssetUSD, USDC: 1, USDT: 1 };
-  for (const [asset, id] of Object.entries(cryptoPriceIds)) {
-    const price = Number(payload[id]?.usd);
+  for (const [asset, symbol] of Object.entries(cryptoSymbols)) {
+    const price = Number(prices.get(symbol));
     if (!Number.isFinite(price) || price <= 0) throw new Error(`crypto rate missing: ${asset}`);
     rates[asset] = price;
   }
+  const tonPrice = Number(ton.data?.rates?.USD);
+  if (!Number.isFinite(tonPrice) || tonPrice <= 0) throw new Error("crypto rate missing: GRAM");
+  rates.GRAM = tonPrice;
   return rates;
 }
 

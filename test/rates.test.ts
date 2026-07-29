@@ -16,13 +16,24 @@ describe("market rates", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url.includes("open.er-api.com")) return json({ rates: { CNY: 7.18, EUR: 0.91, GBP: 0.78, TWD: 31.5 }, result: "success" });
-      if (url.includes("coingecko.com")) return json({ binancecoin: { usd: 610 }, ethereum: { usd: 3200 }, "polygon-ecosystem-token": { usd: 0.9 }, "the-open-network": { usd: 3 }, tron: { usd: 0.12 } });
+      if (url.includes("bybit.com")) return json({
+        result: {
+          list: [
+            { lastPrice: "610", symbol: "BNBUSDT" },
+            { lastPrice: "3200", symbol: "ETHUSDT" },
+            { lastPrice: "0.9", symbol: "POLUSDT" },
+            { lastPrice: "0.12", symbol: "TRXUSDT" },
+          ],
+        },
+        retCode: 0,
+      });
+      if (url.includes("coinbase.com")) return json({ data: { rates: { USD: "3" } } });
       throw new Error(`unexpected fetch ${url}`);
     });
 
     const rates = await syncMarketRates(env(configs));
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(rates.fiatPerUSD.CNY).toBe(7.18);
     expect(rates.assetUSD.ETH).toBe(3200);
     expect(payAmount(71.8, "CNY", "USDT", rate(rates))).toBe(10);
