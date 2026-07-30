@@ -106,6 +106,7 @@ export interface OrderDetail {
 }
 
 export interface Settings {
+  botUsername: string;
   currency: string;
   domain: string;
   fastConfirm: boolean;

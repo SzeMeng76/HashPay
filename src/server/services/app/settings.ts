@@ -1,7 +1,7 @@
 import Decimal from "decimal.js";
 import { getConfig, setConfig, setConfigs } from "@/server/db";
 import { AppError } from "@/server/http/api";
-import { configureBotMiniApp } from "@/server/services/telegram/api";
+import { configureBotMiniApp, refreshBotInfo } from "@/server/services/telegram/api";
 import { ceilAmount } from "@/shared/amount";
 import { toHttpsSiteUrl } from "@/shared/domain";
 import type { AppEnv } from "@/server/types/env";
@@ -58,17 +58,27 @@ let memoryRates: { expiresAt: number; snapshot: MarketRates } | null = null;
 export async function adminSettings(env: AppEnv) {
   return {
     ...(await systemSettings(env)),
+    botUsername: await getConfig(env, "bot_username") || "",
     domain: await getConfig(env, "domain") || "",
     marketRates: publicMarketRates(await currentMarketRates(env)),
     title: await getConfig(env, "title") || "HashPay",
   };
 }
 
+export async function rebindBot(env: AppEnv) {
+  const bot = await refreshBotInfo(env);
+  await configureBotMiniApp(env);
+  return { username: bot.username };
+}
+
 export async function saveAdminSettings(env: AppEnv, input: Record<string, unknown>) {
   const settings = normalizeSettingsPayload(input);
   const domain = normalizeDomain(input.domain);
   const title = String(input.title ?? "").trim() || "HashPay";
-  const previousDomain = await getConfig(env, "domain") || "";
+  const [previousDomain, botUsername] = await Promise.all([
+    getConfig(env, "domain"),
+    getConfig(env, "bot_username"),
+  ]);
   await setConfigs(env, {
     currency: settings.currency,
     domain,
@@ -77,9 +87,10 @@ export async function saveAdminSettings(env: AppEnv, input: Record<string, unkno
     title,
     timeout: String(settings.timeout),
   });
-  if (domain !== previousDomain) await configureBotMiniApp(env);
+  if (domain !== (previousDomain || "")) await configureBotMiniApp(env);
   return {
     ...settings,
+    botUsername: botUsername || "",
     domain,
     marketRates: publicMarketRates(await currentMarketRates(env)),
     title,
