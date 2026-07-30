@@ -5,6 +5,7 @@ import { useRoute, useRouter } from "vue-router";
 import LocaleSwitch from "@/app/components/LocaleSwitch.vue";
 import LoginPanel from "@/app/components/LoginPanel.vue";
 import PageSkeleton from "@/app/components/PageSkeleton.vue";
+import Help from "@/app/pages/Help.vue";
 import Merchants from "@/app/pages/Merchants.vue";
 import Orders from "@/app/pages/Orders.vue";
 import Overview from "@/app/pages/Overview.vue";
@@ -26,6 +27,7 @@ const pages = [
   { component: Orders, key: "orders", label: "nav.orders" },
   { component: Payments, key: "payments", label: "nav.payment" },
   { component: Merchants, key: "merchants", label: "nav.merchants" },
+  { component: Help, key: "help", label: "nav.help" },
   { component: Settings, key: "settings", label: "nav.settings" },
 ] as const;
 
@@ -40,7 +42,7 @@ const navOpen = ref(false);
 const status = ref<AppState | null>(null);
 const user = ref<TelegramUser | null>(null);
 const username = computed(() => status.value?.username || "");
-
+const pageProps = computed(() => pageKey.value === "help" ? { username: username.value } : {});
 
 async function init() {
   loading.value = true;
@@ -113,7 +115,7 @@ onMounted(init);
           </div>
         </n-layout-sider>
         <n-layout-content class="workspace-content">
-          <component :is="page" />
+          <component :is="page" v-bind="pageProps" />
         </n-layout-content>
       </n-layout>
     </n-layout-content>

@@ -248,7 +248,7 @@ function hasReturnUrl(order: Order) {
 
     <n-layout-footer class="checkout-footer">
       <span>{{ t('checkout.copyright') }}</span>
-      <a href="https://github.com/tgdash/HashPay" target="_blank" rel="noreferrer">tgdash/HashPay</a>
+      <a href="https://github.com/tgdash/HashPay" target="_blank" rel="noreferrer">HashPay</a>
     </n-layout-footer>
 
     <ReviewModal

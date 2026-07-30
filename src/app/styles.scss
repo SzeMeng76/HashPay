@@ -392,6 +392,87 @@ a {
   padding: 20px;
 }
 
+.help-list,
+.help-article {
+  max-width: 48rem;
+}
+
+.help-list a {
+  display: block;
+}
+
+.help-article {
+  gap: 24px;
+}
+
+.help-article > header h2 {
+  margin: 0;
+}
+
+.help-article > header p {
+  color: #6b7280;
+  line-height: 1.6;
+  margin: 6px 0 0;
+}
+
+.help-section + .help-section {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 24px;
+}
+
+.help-section h3,
+.help-section p {
+  margin: 0;
+}
+
+.bot-chat {
+  align-items: flex-end;
+  background: #f3f5f7;
+  border: 1px solid #e2e6ea;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  width: min(34rem, 100%);
+}
+
+.bot-chat-name {
+  color: #168acd;
+  font-size: 13px;
+  font-weight: 600;
+  align-self: flex-start;
+}
+
+.bot-chat p {
+  color: #6b7280;
+  margin: 0;
+  text-align: right;
+}
+
+.bot-bubble {
+  border: 0;
+  background: #2aabee;
+  border-radius: 14px 14px 4px 14px;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.5;
+  max-width: 90%;
+  padding: 9px 13px;
+  text-align: left;
+  white-space: pre-line;
+}
+
+.bot-reply {
+  align-self: flex-start;
+  background: #ffffff;
+  border: 1px solid #dce1e6;
+  border-radius: 14px 14px 14px 4px;
+  color: #111827;
+  cursor: default;
+}
+
 .hamburger-icon,
 .hamburger-icon::before,
 .hamburger-icon::after {
