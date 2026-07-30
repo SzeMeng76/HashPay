@@ -4,8 +4,8 @@ import type { Context } from "hono";
 import { getConfig, jsonParseObject, now } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import { confirmLoginPin } from "@/server/services/auth/pin";
-import { createTelegramOrder } from "@/server/services/orders/create";
-import { checkOrderPayment, checkoutData, selectTelegramPayment } from "@/server/services/orders/checkout";
+import { createTelegramOrder, deleteOrder } from "@/server/services/orders/create";
+import { checkOrderPayment, checkoutData, confirmOrder, selectTelegramPayment } from "@/server/services/orders/checkout";
 import { getOrder } from "@/server/services/orders/repository";
 import { botToken } from "@/server/services/telegram/api";
 import { bindSetupAdmin } from "@/server/services/telegram/setup";
@@ -88,6 +88,23 @@ export async function createBot(env: AppEnv) {
     await answerCallback(ctx, {
       show_alert: true,
       text: t(locale, "telegram.review_hint"),
+    });
+  });
+
+  bot.callbackQuery(/^audit:(delete|confirm):(.+)$/, async (ctx) => {
+    if (!await isAdmin(env, ctx.from?.id)) return;
+    await paymentAction(ctx, async () => {
+      const [, action, orderId] = ctx.match;
+      if (action === "confirm") await confirmOrder(env, orderId);
+      else {
+        const order = await getOrder(env, orderId);
+        if (order.status !== "pending" && order.status !== "expired") throw new AppError(400, "errors.order_unavailable");
+        await deleteOrder(env, orderId);
+      }
+      await answerCallback(ctx);
+      await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } }).catch((error) => {
+        console.warn("telegram:audit_keyboard_edit_failed", error);
+      });
     });
   });
 

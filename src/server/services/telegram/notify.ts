@@ -1,8 +1,8 @@
-import { getConfig } from "@/server/db";
+import { getConfig, one } from "@/server/db";
 import { paymentExplorerUrl } from "@/server/payments/driver";
 import { marketAmount, rateContext } from "@/server/services/app/settings";
 import { getMerchant } from "@/server/services/merchants";
-import { sendTelegramMessage } from "@/server/services/telegram/api";
+import { sendTelegramMessage, sendTelegramPhoto } from "@/server/services/telegram/api";
 import { ceilAmount } from "@/shared/amount";
 import { t } from "@/shared/i18n";
 import { assetName, paymentAssetTelegramEmojiId } from "@/shared/payments";
@@ -15,9 +15,10 @@ export async function notifyPayment(env: AppEnv, order: Order, payment: PaymentS
     const adminId = Number(await getConfig(env, "admin_id"));
     if (!adminId) return;
     const source = order.merchant === "INLINE" ? t("zh-CN", "telegram.payment_notice.source_inline") : (await getMerchant(env, order.merchant)).name;
+    const channel = order.payway ? await one<{ name: string }>(env, "SELECT name FROM payments WHERE id = ?", order.payway) : null;
     const rate = await rateContext(env);
     const systemAmount = marketAmount(order.amount, order.currency, rate.settings.currency, rate);
-    await sendTelegramMessage(env, adminId, paymentNoticeText(order, payment, source, {
+    await sendTelegramMessage(env, adminId, paymentNoticeText(order, payment, source, channel?.name ?? payment.driver, {
       amount: systemAmount,
       currency: rate.settings.currency,
     }));
@@ -26,10 +27,36 @@ export async function notifyPayment(env: AppEnv, order: Order, payment: PaymentS
   }
 }
 
+export async function notifyReview(env: AppEnv, order: Order, answer: string, image: ArrayBuffer) {
+  try {
+    const adminId = Number(await getConfig(env, "admin_id"));
+    if (!adminId) return;
+    await sendTelegramPhoto(env, adminId, image);
+    const text = [
+      t("zh-CN", "telegram.review_notice.title", {
+        amount: formatAmount(order.amount),
+        currency: assetName(order.currency),
+      }),
+      t("zh-CN", "telegram.review_notice.order_id", { orderId: `<code>${html(order.id)}</code>` }),
+      "",
+      html(answer),
+    ].join("\n");
+    await sendTelegramMessage(env, adminId, text, {
+      inline_keyboard: [[
+        { callback_data: `audit:delete:${order.id}`, text: t("zh-CN", "telegram.review_notice.delete") },
+        { callback_data: `audit:confirm:${order.id}`, text: t("zh-CN", "telegram.review_notice.confirm") },
+      ]],
+    });
+  } catch (error) {
+    console.error("telegram:review_notice_failed", error);
+  }
+}
+
 export function paymentNoticeText(
   order: Order,
   payment: PaymentSnapshot,
   source: string,
+  channel: string,
   systemAmount = { amount: order.amount, currency: order.currency },
 ) {
   const txUrl = paymentExplorerUrl(payment.driver, payment.tx?.txid);
@@ -48,6 +75,7 @@ export function paymentNoticeText(
     `<pre>${html(order.id)}</pre>`,
     t("zh-CN", "telegram.payment_notice.order_amount", { amount: orderAmount, currency: orderCurrency }),
     t("zh-CN", "telegram.payment_notice.paid_amount", { amount: paidAmount, currency: paidCurrency, emoji }),
+    t("zh-CN", "telegram.payment_notice.channel", { channel: html(channel) }),
     t("zh-CN", "telegram.payment_notice.paid_at", { time: formatTime(Number(payment.tx?.timestamp)) }),
     t("zh-CN", "telegram.payment_notice.source", { source: html(source) }),
   ];

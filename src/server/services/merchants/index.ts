@@ -1,8 +1,9 @@
 import { all, now, one, run } from "@/server/db";
 import { AppError } from "@/server/http/api";
-import { generateRsaKeyPair, verifyRsaSha256 } from "@/server/utils/crypto";
+import { generateRsaKeyPair, randomBase62, verifyRsaSha256 } from "@/server/utils/crypto";
 import { normalizeCallbackUrl } from "@/server/utils/url";
-import type { Merchant as ApiMerchant } from "@/shared/types/api";
+import { authMode, type AuthMode } from "@/shared/merchants";
+import type { Merchant as ApiMerchant, MerchantInput as ApiMerchantInput } from "@/shared/types/api";
 import type { AppEnv } from "@/server/types/env";
 
 interface MerchantRow {
@@ -17,14 +18,15 @@ interface MerchantRow {
 }
 
 export type Merchant = ApiMerchant;
+export type MerchantInput = ApiMerchantInput;
 
 function merchant(row: MerchantRow): Merchant {
   return {
+    authKey: row.public_key,
     callback: row.callback,
     createdAt: row.created_at,
     id: row.id,
     name: row.name,
-    publicKey: row.public_key,
     status: row.status as Merchant["status"],
     type: row.type as Merchant["type"],
     updatedAt: row.updated_at,
@@ -41,30 +43,53 @@ export async function getMerchant(env: AppEnv, id: string) {
   return merchant(row);
 }
 
-export async function saveMerchant(env: AppEnv, input: { callback?: string; id?: string; name: string; status?: string; type?: string }) {
+export async function createMerchant(env: AppEnv, input: MerchantInput) {
   const time = now();
-  const name = input.name.trim();
-  const type = input.type === "telegram" ? "telegram" : "website";
-  const callback = normalizeCallbackUrl(input.callback);
-  const status = input.status === "disabled" ? "disabled" : "enabled";
-  if (!name) throw new AppError(400, "errors.merchant_name_missing");
-  if (input.id) {
-    const row = await one<MerchantRow>(env, "UPDATE merchants SET type = ?, name = ?, callback = ?, status = ?, updated_at = ? WHERE id = ? RETURNING *", type, name, callback, status, time, input.id);
-    if (!row) throw new AppError(404, "errors.merchant_not_found");
-    return { merchant: merchant(row) };
-  }
+  const { callback, name, status, type } = fields(input);
   const id = crypto.randomUUID();
-  const pair = await generateRsaKeyPair();
-  const row = await one<MerchantRow>(env, "INSERT INTO merchants(id, type, name, public_key, callback, status, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?) RETURNING *", id, type, name, pair.publicKeyPem, callback, status, time, time);
+  const created = await createCredential(authMode(type));
+  const row = await one<MerchantRow>(env, "INSERT INTO merchants(id, type, name, public_key, callback, status, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?) RETURNING *", id, type, name, created.authKey, callback, status, time, time);
   if (!row) throw new AppError(500, "errors.merchant_create_failed");
-  return { merchant: merchant(row), privateKey: pair.privateKeyPem };
+  return { credential: created.credential, merchant: merchant(row) };
 }
 
-export async function rotateMerchantKey(env: AppEnv, id: string) {
-  const pair = await generateRsaKeyPair();
-  const row = await one<MerchantRow>(env, "UPDATE merchants SET public_key = ?, updated_at = ? WHERE id = ? RETURNING *", pair.publicKeyPem, now(), id);
+export async function updateMerchant(env: AppEnv, id: string, input: MerchantInput) {
+  const current = await getMerchant(env, id);
+  const { callback, name, status, type } = fields(input);
+  const mode = authMode(type);
+  const created = authMode(current.type) === mode ? null : await createCredential(mode);
+  const authKey = created?.authKey ?? current.authKey;
+  const row = await one<MerchantRow>(env, "UPDATE merchants SET type = ?, name = ?, public_key = ?, callback = ?, status = ?, updated_at = ? WHERE id = ? RETURNING *", type, name, authKey, callback, status, now(), id);
   if (!row) throw new AppError(404, "errors.merchant_not_found");
-  return { merchant: merchant(row), privateKey: pair.privateKeyPem };
+  return { ...(created ? { credential: created.credential } : {}), merchant: merchant(row) };
+}
+
+export async function rotateCredential(env: AppEnv, id: string) {
+  const current = await getMerchant(env, id);
+  const created = await createCredential(authMode(current.type));
+  const row = await one<MerchantRow>(env, "UPDATE merchants SET public_key = ?, updated_at = ? WHERE id = ? RETURNING *", created.authKey, now(), id);
+  if (!row) throw new AppError(404, "errors.merchant_not_found");
+  return { credential: created.credential, merchant: merchant(row) };
+}
+
+function fields(input: MerchantInput) {
+  const name = input.name.trim();
+  if (!name) throw new AppError(400, "errors.merchant_name_missing");
+  return {
+    callback: normalizeCallbackUrl(input.callback),
+    name,
+    status: input.status,
+    type: input.type,
+  };
+}
+
+async function createCredential(mode: AuthMode) {
+  if (mode === "md5") {
+    const secret = randomBase62(32);
+    return { authKey: secret, credential: secret };
+  }
+  const pair = await generateRsaKeyPair();
+  return { authKey: pair.publicKeyPem, credential: pair.privateKeyPem };
 }
 
 export async function deleteMerchant(env: AppEnv, id: string) {
@@ -88,10 +113,11 @@ export async function requireSignedMerchant(
   }
   const merchant = await getMerchant(env, merchantId);
   if (merchant.status !== "enabled") throw new AppError(401, "errors.merchant_disabled");
-  if (!merchant.publicKey.trim()) throw new AppError(401, "errors.merchant_public_key_missing");
+  if (authMode(merchant.type) !== "rsa") throw new AppError(401, "errors.signature_invalid");
+  if (!merchant.authKey.trim()) throw new AppError(401, "errors.merchant_public_key_missing");
   const url = new URL(request.url);
   const signedPayload = [request.method.toUpperCase(), `${url.pathname}${url.search}`, timestamp, body].join("\n");
-  if (!await verifyRsaSha256(merchant.publicKey, signature, signedPayload)) {
+  if (!await verifyRsaSha256(merchant.authKey, signature, signedPayload)) {
     throw new AppError(401, "errors.signature_invalid");
   }
   return merchant;

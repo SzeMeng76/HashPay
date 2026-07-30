@@ -112,7 +112,7 @@ export async function listOrdersPage(env: AppEnv, input: { page?: number; pageSi
 export async function listPendingPaymentOrders(env: AppEnv, limit = 20) {
   return (await all<OrderRow>(
     env,
-    "SELECT * FROM orders WHERE status = 'pending' AND expire_at > ? AND payment <> '{}' ORDER BY created_at ASC LIMIT ?",
+    "SELECT * FROM orders WHERE status = 'pending' AND expire_at > ? AND json_extract(payment, '$.driver') IS NOT NULL ORDER BY created_at ASC LIMIT ?",
     now(),
     Math.min(Math.max(Number(limit) || 20, 1), 200),
   )).map(order);
@@ -135,7 +135,8 @@ export async function refreshOrderPaymentWindow(env: AppEnv, orderId: string, pa
 }
 
 export function publicOrder(order: Order): ApiOrder {
-  const payment = jsonParseObject<Partial<PaymentSnapshot>>(order.payment, {});
+  const payment = jsonParseObject<Partial<PaymentSnapshot> & { _ezfp?: unknown; out_id?: unknown }>(order.payment, {});
+  delete payment._ezfp;
   delete payment.out_id;
   return {
     amount: order.amount,

@@ -6,6 +6,8 @@ import { api, type Merchant } from "@/app/api";
 import { useI18n } from "@/app/i18n";
 import { copyText } from "@/app/utils/clipboard";
 import { formatTime } from "@/app/utils/format";
+import { authMode, type AuthMode } from "@/shared/merchants";
+import { ask } from "@/app/utils/telegram";
 
 interface MerchantForm {
   callback: string;
@@ -19,7 +21,7 @@ const router = useRouter();
 const message = useMessage();
 const { t } = useI18n();
 const merchants = ref<Merchant[]>([]);
-const credential = ref<{ merchantId: string; privateKey: string } | null>(null);
+const credential = ref<{ key: string; merchantId: string; mode: AuthMode } | null>(null);
 const loading = ref(false);
 const form = reactive<MerchantForm>({ callback: "", name: "", status: "enabled", type: "website" });
 
@@ -34,6 +36,11 @@ const typeOptions = computed<Array<{ description: string; label: string; value: 
     label: t("merchant.type.telegram"),
     value: "telegram",
   },
+  {
+    description: t("merchant.type.ezfp_desc"),
+    label: t("merchant.type.ezfp"),
+    value: "ezfp",
+  },
 ]);
 const typeLabels = computed<Record<string, string>>(() => Object.fromEntries(typeOptions.value.map((item) => [item.value, item.label])));
 
@@ -44,6 +51,7 @@ const mode = computed<"" | "edit" | "new">(() => {
 const editingId = computed(() => (mode.value === "edit" ? String(route.params.id) : ""));
 const current = computed(() => merchants.value.find((item) => item.id === editingId.value) ?? null);
 const isEdit = computed(() => mode.value === "edit");
+const currentMode = computed(() => authMode(current.value?.type ?? form.type));
 const typeDescription = computed(() => typeOptions.value.find((item) => item.value === form.type)?.description ?? "");
 const formOpen = computed({
   get: () => mode.value !== "",
@@ -94,13 +102,18 @@ async function save() {
     message.success(creating ? t("merchant.created") : t("merchant.saved"));
     await load();
     closeForm();
-    if (creating && result.privateKey) {
-      credential.value = { merchantId: result.merchant.id, privateKey: result.privateKey };
+    if (result.credential) {
+      credential.value = {
+        key: result.credential,
+        merchantId: result.merchant.id,
+        mode: authMode(result.merchant.type),
+      };
     }
   });
 }
 
 async function remove(id: string) {
+  if (!await ask(t("merchant.delete_warning"))) return;
   await run(async () => {
     await api.merchants.remove(id);
     message.success(t("merchant.deleted"));
@@ -129,16 +142,19 @@ async function setStatus(item: Merchant, status: string) {
   }
 }
 
-async function resetKey() {
+async function resetCredential() {
   if (!editingId.value) return;
+  if (!await ask(t("merchant.reset_key_warning"))) return;
   await run(async () => {
-    const result = await api.merchants.rotateKey(editingId.value);
+    const result = await api.merchants.rotateCredential(editingId.value);
     message.success(t("merchant.key_reset"));
     await load();
     closeForm();
-    if (result.privateKey) {
-      credential.value = { merchantId: result.merchant.id, privateKey: result.privateKey };
-    }
+    credential.value = {
+      key: result.credential,
+      merchantId: result.merchant.id,
+      mode: authMode(result.merchant.type),
+    };
   });
 }
 
@@ -256,16 +272,7 @@ onMounted(() => run(load));
           <div v-if="isEdit" class="form-section grid">
             <div class="credential-title-row">
               <h3>{{ t('merchant.credentials') }}</h3>
-              <n-popconfirm
-                :negative-text="t('common.cancel')"
-                :positive-text="t('common.reset')"
-                @positive-click="resetKey"
-              >
-                <template #trigger>
-                  <n-button :loading="loading" secondary size="small" type="warning">{{ t('common.reset') }}</n-button>
-                </template>
-                {{ t('merchant.reset_key_warning') }}
-              </n-popconfirm>
+              <n-button :loading="loading" secondary size="small" type="warning" @click="resetCredential">{{ t('common.reset') }}</n-button>
             </div>
             <div class="credential-grid credential-grid-single">
               <div v-if="current" class="credential-field">
@@ -276,14 +283,15 @@ onMounted(() => run(load));
                 </div>
               </div>
               <div v-if="current" class="form-field-block">
-                <span class="field-label">{{ t('merchant.public_key') }}</span>
+                <span class="field-label">
+                  {{ currentMode === 'rsa' ? t('merchant.public_key') : t('merchant.secret_key') }}
+                </span>
                 <n-input
-                  :value="current.publicKey || ''"
+                  :value="current.authKey || ''"
                   :input-props="{ style: { overflowWrap: 'normal', whiteSpace: 'pre' }, wrap: 'off' }"
                   readonly
-                  :placeholder="t('merchant.no_public_key')"
-                  type="textarea"
-                  :autosize="{ minRows: 5, maxRows: 10 }"
+                  :type="currentMode === 'rsa' ? 'textarea' : 'text'"
+                  :autosize="currentMode === 'rsa' ? { minRows: 5, maxRows: 10 } : undefined"
                 />
               </div>
             </div>
@@ -317,23 +325,25 @@ onMounted(() => run(load));
           </div>
           <div class="form-field-block">
             <div class="credential-title-row">
-              <span class="field-label">{{ t('merchant.private_key') }}</span>
+              <span class="field-label">
+                {{ credential?.mode === 'rsa' ? t('merchant.private_key') : t('merchant.secret_key') }}
+              </span>
             </div>
             <n-input
-              :value="credential?.privateKey || ''"
+              :value="credential?.key || ''"
               readonly
-              placeholder="-----BEGIN PRIVATE KEY-----"
-              type="textarea"
-              :autosize="{ minRows: 8, maxRows: 14 }"
+              :type="credential?.mode === 'rsa' ? 'textarea' : 'text'"
+              :autosize="credential?.mode === 'rsa' ? { minRows: 8, maxRows: 14 } : undefined"
             />
-            <small class="field-help">{{ t('merchant.private_key_once') }}</small>
           </div>
         </div>
 
         <template #footer>
           <div class="modal-actions">
             <n-button secondary @click="credentialOpen = false">{{ t('common.close') }}</n-button>
-            <n-button type="primary" @click="copyText(credential?.privateKey || '', { message })">{{ t('merchant.copy_private_key') }}</n-button>
+            <n-button type="primary" @click="copyText(credential?.key || '', { message })">
+              {{ t('common.copy') }}
+            </n-button>
           </div>
         </template>
       </n-card>

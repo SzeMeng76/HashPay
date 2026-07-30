@@ -18,6 +18,7 @@ export async function appState(env: AppEnv, _requestUrl: string) {
   let domain: string | null = null;
   let adminId: string | null = null;
   let webhookSecret: string | null = null;
+  let title = "HashPay";
   let username = "";
   try {
     await migrateD1(env);
@@ -26,9 +27,11 @@ export async function appState(env: AppEnv, _requestUrl: string) {
       getConfig(env, "admin_id"),
       getConfig(env, "bot_secret"),
       getConfig(env, "bot_username"),
+      getConfig(env, "title"),
     ]);
     [domain, adminId, webhookSecret] = configs;
     username = configs[3] || "";
+    title = configs[4] || title;
   } catch (error) {
     db = error instanceof Error ? error.message : "Database is not available";
   }
@@ -49,6 +52,7 @@ export async function appState(env: AppEnv, _requestUrl: string) {
     domain,
     queue: env.QUEUE_NOTIFY ? null : "QUEUE_NOTIFY binding is not configured",
     ready: bot === "ready",
+    title,
     username,
   };
 }

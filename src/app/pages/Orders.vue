@@ -5,6 +5,7 @@ import OrderModal from "@/app/components/OrderModal.vue";
 import OrderRow from "@/app/components/OrderRow.vue";
 import { api } from "@/app/api";
 import { useI18n } from "@/app/i18n";
+import { ask } from "@/app/utils/telegram";
 
 const message = useMessage();
 const { t } = useI18n();
@@ -81,6 +82,7 @@ async function checkPayments() {
 async function deleteOrders() {
   const ids = [...view.selected];
   if (!ids.length) return;
+  if (!await ask(t("orders.delete_selected_warning"))) return;
 
   await load(async () => {
     await Promise.all(ids.map((id) => api.silent.orders.remove(id).catch(() => null)));
@@ -148,12 +150,7 @@ onMounted(load);
         <span>{{ view.selected.length ? t('orders.selected', { count: view.selected.length }) : t('orders.total', { count: view.total }) }}</span>
         <div v-if="view.selected.length" class="orders-bulk-actions">
           <n-button :disabled="!selection.pending.length" :loading="view.loading" size="small" @click="checkPayments">{{ t('orders.check_payment') }}</n-button>
-          <n-popconfirm @positive-click="deleteOrders">
-            <template #trigger>
-              <n-button :loading="view.loading" size="small" tertiary type="error">{{ t('orders.delete_selected') }}</n-button>
-            </template>
-            {{ t('orders.delete_selected_warning') }}
-          </n-popconfirm>
+          <n-button :loading="view.loading" size="small" tertiary type="error" @click="deleteOrders">{{ t('orders.delete_selected') }}</n-button>
           <n-button size="small" quaternary @click="view.selected = []">{{ t('orders.clear_selection') }}</n-button>
         </div>
       </div>

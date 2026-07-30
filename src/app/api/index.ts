@@ -6,6 +6,7 @@ import type {
   Checkout,
   Dashboard,
   Merchant,
+  MerchantInput,
   OrderDetail,
   Order,
   Payment,
@@ -63,15 +64,15 @@ function endpoints(options: ApiRequestOptions = {}) {
     },
     merchants: {
       list: () => get<Merchant[]>("/api/admin/merchants", options),
-      create: (input: { callback: string | null; name: string; status: Merchant["status"]; type: Merchant["type"] }) => post<{ merchant: Merchant; privateKey?: string }>("/api/admin/merchants", input, options),
-      update: (merchantId: string, input: { callback: string | null; name: string; status: Merchant["status"]; type: Merchant["type"] }) =>
-        put<{ merchant: Merchant; privateKey?: string }>(`/api/admin/merchants/${id(merchantId)}`, input, options),
+      create: (input: MerchantInput) => post<{ credential: string; merchant: Merchant }>("/api/admin/merchants", input, options),
+      update: (merchantId: string, input: MerchantInput) =>
+        put<{ credential?: string; merchant: Merchant }>(`/api/admin/merchants/${id(merchantId)}`, input, options),
       remove: (merchantId: string) => del<{ ok: boolean }>(`/api/admin/merchants/${id(merchantId)}`, options),
-      rotateKey: (merchantId: string) => post<{ merchant: Merchant; privateKey?: string }>(`/api/admin/merchants/${id(merchantId)}/rotate-key`, undefined, options),
+      rotateCredential: (merchantId: string) => post<{ credential: string; merchant: Merchant }>(`/api/admin/merchants/${id(merchantId)}/rotate-key`, undefined, options),
     },
     settings: {
       get: () => get<Settings>("/api/admin/settings", options),
-      save: (input: { currency: string; domain: string; fastConfirm: boolean; rateAdjust: number; timeout: number }) => put<Settings>("/api/admin/settings", input, options),
+      save: (input: { currency: string; domain: string; fastConfirm: boolean; rateAdjust: number; title: string; timeout: number }) => put<Settings>("/api/admin/settings", input, options),
     },
     banner: {
       upload: (body: ArrayBuffer) => upload<{ url: string }>("/api/admin/banner", body, "image/webp", options),

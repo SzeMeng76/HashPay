@@ -8,13 +8,21 @@ export function botToken(env: AppEnv) {
   return env.TGBOT_TOKEN;
 }
 
-export async function sendTelegramMessage(env: AppEnv, chatId: number, text: string) {
+export async function sendTelegramMessage(env: AppEnv, chatId: number, text: string, replyMarkup?: Record<string, unknown>) {
   await call(env, "sendMessage", {
     chat_id: chatId,
     link_preview_options: { is_disabled: true },
     parse_mode: "HTML",
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
     text,
   });
+}
+
+export async function sendTelegramPhoto(env: AppEnv, chatId: number, image: ArrayBuffer) {
+  const body = new FormData();
+  body.set("chat_id", String(chatId));
+  body.set("photo", new Blob([image], { type: "image/webp" }), "review.webp");
+  await call(env, "sendPhoto", body);
 }
 
 export async function getBotInfo(env: AppEnv) {
@@ -62,11 +70,11 @@ export async function configureBotMiniApp(env: AppEnv) {
   if (secret) await setupWebhook(env, domain, secret);
 }
 
-async function call<T = unknown>(env: AppEnv, method: string, body: Record<string, unknown> = {}) {
+async function call<T = unknown>(env: AppEnv, method: string, body: Record<string, unknown> | FormData = {}) {
   const url = `https://api.telegram.org/bot${botToken(env)}/${method}`;
   const { res, text } = await fetchText(url, {
-    body: JSON.stringify(body),
-    headers: { "content-type": "application/json" },
+    body: body instanceof FormData ? body : JSON.stringify(body),
+    headers: body instanceof FormData ? undefined : { "content-type": "application/json" },
     method: "POST",
   });
   let payload: { description?: string; ok?: boolean; result?: T };

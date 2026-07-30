@@ -83,7 +83,7 @@ function hasReturnUrl(order: Order) {
     <n-layout-header class="checkout-topbar">
       <div class="checkout-topbar-inner">
         <div class="checkout-brand">
-          <strong>{{ t('app.name') }}</strong>
+          <strong>{{ checkout?.title || t('app.name') }}</strong>
           <span>{{ t('checkout.cashier') }}</span>
         </div>
         <LocaleSwitch />
@@ -245,6 +245,11 @@ function hasReturnUrl(order: Order) {
         </div>
       </section>
     </n-layout-content>
+
+    <n-layout-footer class="checkout-footer">
+      <span>{{ t('checkout.copyright') }}</span>
+      <a href="https://github.com/tgdash/HashPay" target="_blank" rel="noreferrer">tgdash/HashPay</a>
+    </n-layout-footer>
 
     <ReviewModal
       v-model:show="reviewVisible"

@@ -6,6 +6,7 @@ import NSegmented from "@/app/components/NSegmented.vue";
 import { useI18n } from "@/app/i18n";
 import * as payment from "@/app/payments";
 import { api, type Payment } from "@/app/api";
+import { ask } from "@/app/utils/telegram";
 
 interface PaymentForm {
   address: string;
@@ -81,6 +82,7 @@ function payload(driverId: string, network: string, assets: string[]) {
 }
 
 async function remove(id: number) {
+  if (!await ask(t("payment.delete_warning"))) return;
   await api.payments.remove(id);
   message.success(t("payment.deleted"));
   await load();
@@ -300,12 +302,7 @@ onMounted(load);
       </div>
       <div class="form-actions">
         <n-button size="small" @click="edit(item)">{{ t("common.edit") }}</n-button>
-        <n-popconfirm @positive-click="remove(item.id)">
-          <template #trigger>
-            <n-button size="small" tertiary type="error">{{ t("common.delete") }}</n-button>
-          </template>
-          {{ t("payment.delete_warning") }}
-        </n-popconfirm>
+        <n-button size="small" tertiary type="error" @click="remove(item.id)">{{ t("common.delete") }}</n-button>
       </div>
     </div>
   </section>

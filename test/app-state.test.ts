@@ -52,11 +52,13 @@ describe("app state", () => {
       ["bot_username", "HashPayBot"],
       ["domain", "https://hashpay.test"],
       ["bot_secret", "secret"],
+      ["title", "Demo Pay"],
     ]);
 
     const status = await appState(createEnv(configs), "https://hashpay.test/admin");
 
     expect(status.ready).toBe(true);
+    expect(status.title).toBe("Demo Pay");
     expect(status.username).toBe("HashPayBot");
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -75,6 +77,7 @@ describe("app state", () => {
     const status = await appState(createEnv(configs), "https://hashpay.test/admin");
 
     expect(status.username).toBe("FreshHashPayBot");
+    expect(status.title).toBe("HashPay");
     expect(configs.get("bot_username")).toBe("FreshHashPayBot");
     expect(fetch).toHaveBeenCalledTimes(1);
   });

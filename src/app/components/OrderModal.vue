@@ -6,6 +6,7 @@ import { api } from "@/app/api";
 import { useI18n } from "@/app/i18n";
 import { formatDisplayAmount as formatAmount, formatTime } from "@/app/utils/format";
 import { copyText } from "@/app/utils/clipboard";
+import { ask } from "@/app/utils/telegram";
 import { assetName } from "@/shared/payments";
 import type { OrderDetail, Order } from "@/shared/types/api";
 import type { PaymentSnapshot } from "@/shared/types/domain";
@@ -76,6 +77,7 @@ async function checkPayment() {
 }
 
 async function confirmPayment() {
+  if (!await ask(t("order.confirm_warning"))) return;
   await run("confirm", async (id) => {
     await api.orders.confirm(id);
     message.success(t("order.confirm_done"));
@@ -93,6 +95,7 @@ async function resendNotify() {
 }
 
 async function deleteOrder() {
+  if (!await ask(t("order.delete_warning"))) return;
   await run("delete", async (id) => {
     await api.orders.remove(id);
     message.success(t("order.deleted"));
@@ -155,22 +158,19 @@ function rateText(value: OrderDetail) {
                 <span>{{ t('orders.check_payment') }}</span>
               </span>
             </n-button>
-            <n-popconfirm
+            <n-button
               v-if="detail.order.status === 'pending' || detail.order.status === 'expired'"
-              :negative-text="t('common.cancel')"
-              :positive-text="t('order.confirm_payment')"
-              @positive-click="confirmPayment"
+              :loading="action === 'confirm'"
+              secondary
+              size="small"
+              type="warning"
+              @click="confirmPayment"
             >
-              <template #trigger>
-                <n-button :loading="action === 'confirm'" secondary size="small" type="warning">
-                  <span class="tool-button-content">
-                    <span class="tool-icon tool-icon-confirm"></span>
-                    <span>{{ t('order.confirm_payment') }}</span>
-                  </span>
-                </n-button>
-              </template>
-              {{ t('order.confirm_warning') }}
-            </n-popconfirm>
+              <span class="tool-button-content">
+                <span class="tool-icon tool-icon-confirm"></span>
+                <span>{{ t('order.confirm_payment') }}</span>
+              </span>
+            </n-button>
             <n-button
               v-if="detail.order.status === 'paid'"
               :loading="action === 'notify'"

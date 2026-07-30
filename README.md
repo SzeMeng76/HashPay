@@ -290,6 +290,13 @@ X-Signature: <base64-rsa-sha256-signature>
 
 商户系统应校验时间戳窗口，并在处理成功后返回 HTTP 2xx。失败时 HashPay 最多重试 8 次，间隔逐次递增。
 
+#### 易支付兼容（Ezfp）
+
+项目也支持兼容易支付接口，需在后台创建“易支付兼容 (Ezfp)”商户。
+
+- 平台地址填写 HashPay 站点地址，支持 `GET/POST /submit.php` 和 `POST /mapi.php`。
+- 额外的参数 `fiat` 指定订单法币，支持 `CNY` 和 `USD`，不传时默认为 `CNY`。
+
 ---
 
 ### 交给AI
@@ -305,10 +312,7 @@ X-Signature: <base64-rsa-sha256-signature>
 > - 请求头：`X-Merchant-Id`、`X-Timestamp`、`X-Signature`
 > - 回调通知使用 `RSA-OAEP-256+A256GCM` 加密信封，使用商户私钥解密后读取 `{ timestamp, payload }`
 >
-> 配置项使用环境变量或配置文件：
-> - `HASHPAY_BASE_URL` — HashPay 服务地址
-> - `HASHPAY_MERCHANT_ID` — 商户 ID
-> - `HASHPAY_PRIVATE_KEY` — 商户 RSA 私钥（PEM 格式）
+> 配置部分根据当前项目代码决定，可作为支付配置项目、独立配置项目或环境变量。
 >
 > API 文档：https://raw.githubusercontent.com/TGDash/HashPay/refs/heads/main/README.md
 
@@ -319,6 +323,7 @@ X-Signature: <base64-rsa-sha256-signature>
 | 平台/方式 | 说明 |
 | --- | --- |
 | [EgdeKey](https://github.com/TGDash/HashPay/wiki/配置教程-%E2%80%90-EgdeKey) | 运行在Cloudflare Wokers 上的发卡系统 |
+| [易支付接口](https://ezfp.cn/doc.html) | 大部分发卡、商城项目均支持易支付接口 |
 
 ## 🔧 维护
 

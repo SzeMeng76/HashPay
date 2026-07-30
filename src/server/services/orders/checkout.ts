@@ -1,4 +1,4 @@
-import { all, jsonParseObject, now, run } from "@/server/db";
+import { all, getConfig, jsonParseObject, now, run } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import { getMerchant } from "@/server/services/merchants";
 import { assignPayment, checkPayment, checksOnSchedule, createPayment, paymentOptions } from "@/server/payments/driver";
@@ -6,8 +6,9 @@ import { listPayments, recordCheck, type PaymentChannel } from "@/server/payment
 import { notifyData as okpayNotifyData, verify as verifyOkpay } from "@/server/payments/providers/okpay";
 import { getOrder, listPendingPaymentOrders, publicOrder, refreshOrderPaymentWindow, setOrderPayment } from "@/server/services/orders/repository";
 import { createNotify } from "@/server/services/orders/notifications";
-import { notifyPayment } from "@/server/services/telegram/notify";
+import { notifyPayment, notifyReview } from "@/server/services/telegram/notify";
 import { clearReviewImage, imageData, saveReview } from "@/server/services/orders/review";
+import { ezfpReturnUrl, preserveEzfpContext } from "@/server/services/merchants/ezfp";
 import { payAmount, rateContext, systemSettings } from "@/server/services/app/settings";
 import { key } from "@/shared/payments";
 import { ceilAmount, sameAmount } from "@/shared/amount";
@@ -23,9 +24,13 @@ type PaymentTxInput = {
 
 export async function checkoutData(env: AppEnv, orderId: string) {
   const order = await getOrder(env, orderId);
-  const merchant = order.merchant === "INLINE" ? { id: "INLINE", name: "Telegram" } : await getMerchant(env, order.merchant);
-  const channels = (await listPayments(env)).filter((item) => item.status === "enabled");
-  const rate = await rateContext(env);
+  const [merchant, payments, rate, title] = await Promise.all([
+    order.merchant === "INLINE" ? null : getMerchant(env, order.merchant),
+    listPayments(env),
+    rateContext(env),
+    getConfig(env, "title"),
+  ]);
+  const channels = payments.filter((item) => item.status === "enabled");
   const options = [];
   for (const channel of channels) {
     for (const option of paymentOptions(channel)) {
@@ -38,20 +43,27 @@ export async function checkoutData(env: AppEnv, orderId: string) {
   }
   return {
     fastConfirm: rate.settings.fastConfirm,
-    merchant: { id: merchant.id, name: merchant.name },
+    merchant: merchant ? { id: merchant.id, name: merchant.name } : { id: "INLINE", name: "Telegram" },
     options,
-    order: publicOrder(order),
+    order: checkoutOrder(order, merchant),
+    title: title || "HashPay",
   };
 }
 
 export async function checkoutStatus(env: AppEnv, orderId: string) {
-  const order = await getOrder(env, orderId);
+  let order = await getOrder(env, orderId);
   const snapshot = jsonParseObject<PaymentSnapshot>(order.payment, {} as PaymentSnapshot);
   if (order.status === "pending" && snapshot.url) {
     await checkOrderPayment(env, order.id).catch(() => undefined);
-    return publicOrder(await getOrder(env, orderId));
+    order = await getOrder(env, orderId);
   }
-  return publicOrder(order);
+  const merchant = order.merchant === "INLINE" ? null : await getMerchant(env, order.merchant);
+  return checkoutOrder(order, merchant);
+}
+
+function checkoutOrder(order: Order, merchant: Awaited<ReturnType<typeof getMerchant>> | null) {
+  const returnUrl = merchant?.type === "ezfp" ? ezfpReturnUrl(order, merchant) : order.redirectUrl;
+  return { ...publicOrder(order), returnUrl };
 }
 
 function randomIndex(length: number) {
@@ -89,7 +101,10 @@ async function selectPayment(env: AppEnv, order: Order, asset: string, network: 
   const channel = channels[randomIndex(channels.length)];
   const rate = await rateContext(env);
   const amount = await uniqueAmount(env, channel, order.id, targetAsset, payAmount(order.amount, order.currency, targetAsset, rate));
-  const snapshot = await createPayment(channel, order, assignPayment(channel, amount, targetAsset));
+  const snapshot = preserveEzfpContext(
+    order.payment,
+    await createPayment(channel, order, assignPayment(channel, amount, targetAsset)),
+  );
   const ts = now();
   if (refreshWindow) {
     await refreshOrderPaymentWindow(env, order.id, channel.id, snapshot, rate.settings.timeout, ts);
@@ -187,7 +202,9 @@ export async function submitPaymentReview(env: AppEnv, orderId: string, input: R
   if (image.length > 2_800_000) throw new AppError(400, "errors.review_image_too_large");
   const data = imageData(image);
   if (!data) throw new AppError(400, "errors.review_image_invalid");
-  return { review: await saveReview(env, order.id, answer, data) };
+  const review = await saveReview(env, order.id, answer, data);
+  await notifyReview(env, order, answer, data);
+  return { review };
 }
 
 export async function checkOrderPayment(env: AppEnv, orderId: string) {

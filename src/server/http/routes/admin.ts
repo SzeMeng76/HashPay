@@ -4,7 +4,7 @@ import { deletePayment, listPayments, publicPayment, savePayment } from "@/serve
 import { consumePin, createPin, endSession, telegramLogin } from "@/server/services/auth/login";
 import { requireAdmin } from "@/server/services/auth/session";
 import { restoreDefaultBanner, uploadBanner } from "@/server/services/images/banner";
-import { deleteMerchant, listMerchants, rotateMerchantKey, saveMerchant } from "@/server/services/merchants";
+import { createMerchant, deleteMerchant, listMerchants, rotateCredential, updateMerchant, type MerchantInput } from "@/server/services/merchants";
 import { checkOrderPayment, confirmOrder, deleteOrder, getOrderDetail, listOrdersPage, resendNotify } from "@/server/services/orders/manage";
 import { checkDashboard, dashboard } from "@/server/services/app";
 import { adminSettings, saveAdminSettings } from "@/server/services/app/settings";
@@ -59,12 +59,12 @@ app.delete("/payment/:id", json(async (c) => {
 
 // Merchants
 app.get("/merchants", json((c) => listMerchants(c.env)));
-app.post("/merchants", json(async (c) => saveMerchant(c.env, await reqJson(c) as never)));
+app.post("/merchants", json(async (c) => createMerchant(c.env, await reqJson(c) as unknown as MerchantInput)));
 app.put("/merchants/:id", json(async (c) => {
   const body = await reqJson(c);
-  return saveMerchant(c.env, { ...(body as { callback?: string; name: string; status?: string; type?: string }), id: c.req.param("id")! });
+  return updateMerchant(c.env, c.req.param("id")!, body as unknown as MerchantInput);
 }));
-app.post("/merchants/:id/rotate-key", json((c) => rotateMerchantKey(c.env, c.req.param("id")!)));
+app.post("/merchants/:id/rotate-key", json((c) => rotateCredential(c.env, c.req.param("id")!)));
 app.delete("/merchants/:id", json(async (c) => {
   await deleteMerchant(c.env, c.req.param("id")!);
   return { ok: true };

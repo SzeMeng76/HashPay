@@ -4,6 +4,7 @@ import { useMessage } from "naive-ui";
 import DomainInput from "@/app/components/DomainInput.vue";
 import { api, type Settings } from "@/app/api";
 import { useI18n } from "@/app/i18n";
+import { title } from "@/app/site";
 import { isDomain, toDomain, toSiteUrl } from "@/shared/domain";
 import { formatTime } from "@/app/utils/format";
 
@@ -44,6 +45,7 @@ const usdtRate = computed(() => {
 async function load() {
   settings.value = await api.settings.get();
   settings.value.domain = toDomain(settings.value.domain);
+  title.value = settings.value.title;
   bannerVersion.value = Date.now();
 }
 
@@ -57,10 +59,12 @@ async function save() {
     domain: siteUrl.value,
     fastConfirm: settings.value.fastConfirm,
     rateAdjust: settings.value.rateAdjust,
+    title: settings.value.title,
     timeout: settings.value.timeout,
   });
   settings.value = saved;
   settings.value.domain = toDomain(settings.value.domain);
+  title.value = saved.title;
   message.success(t("settings.saved"));
 }
 
@@ -145,10 +149,17 @@ onMounted(load);
 
 <template>
   <div class="grid">
-    <div class="section-title"><h2>{{ t('settings.title') }}</h2></div>
+    <div class="section-title">
+      <h2>{{ t('settings.title') }}</h2>
+      <n-button type="primary" @click="save">{{ t('settings.save') }}</n-button>
+    </div>
     <div class="panel grid">
       <div class="section-title"><h2>{{ t('settings.site') }}</h2></div>
       <div class="form-grid two">
+        <label class="field-stack">
+          <span>{{ t('settings.site_title') }}</span>
+          <n-input v-model:value="settings.title" />
+        </label>
         <label class="field-stack">
           <span>{{ t('settings.domain') }}</span>
           <DomainInput v-model="settings.domain" />
@@ -208,7 +219,6 @@ onMounted(load);
           </n-form-item-gi>
         </n-grid>
       </n-form>
-      <n-button type="primary" @click="save">{{ t('settings.save') }}</n-button>
     </div>
     <div class="panel grid">
       <div class="section-title"><h2>Banner</h2></div>

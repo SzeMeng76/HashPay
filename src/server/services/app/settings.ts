@@ -60,18 +60,21 @@ export async function adminSettings(env: AppEnv) {
     ...(await systemSettings(env)),
     domain: await getConfig(env, "domain") || "",
     marketRates: publicMarketRates(await currentMarketRates(env)),
+    title: await getConfig(env, "title") || "HashPay",
   };
 }
 
 export async function saveAdminSettings(env: AppEnv, input: Record<string, unknown>) {
   const settings = normalizeSettingsPayload(input);
   const domain = normalizeDomain(input.domain);
+  const title = String(input.title ?? "").trim() || "HashPay";
   const previousDomain = await getConfig(env, "domain") || "";
   await setConfigs(env, {
     currency: settings.currency,
     domain,
     fast_confirm: String(settings.fastConfirm),
     rate_adjust: String(settings.rateAdjust),
+    title,
     timeout: String(settings.timeout),
   });
   if (domain !== previousDomain) await configureBotMiniApp(env);
@@ -79,6 +82,7 @@ export async function saveAdminSettings(env: AppEnv, input: Record<string, unkno
     ...settings,
     domain,
     marketRates: publicMarketRates(await currentMarketRates(env)),
+    title,
   };
 }
 

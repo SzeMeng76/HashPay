@@ -12,6 +12,7 @@ import Payments from "@/app/pages/Payments.vue";
 import Settings from "@/app/pages/Settings.vue";
 import { api, type AppState, type TelegramUser } from "@/app/api";
 import { useI18n } from "@/app/i18n";
+import { title } from "@/app/site";
 import { isTelegramMiniApp, loginWithTelegram, logoutSession, readSession } from "@/app/utils/session-login";
 
 const route = useRoute();
@@ -44,6 +45,7 @@ const username = computed(() => status.value?.username || "");
 async function init() {
   loading.value = true;
   status.value = await api.state.get();
+  title.value = status.value.title;
   if (!status.value.ready) {
     await router.replace("/setup");
     return;
@@ -75,7 +77,7 @@ onMounted(init);
             <span class="hamburger-icon" aria-hidden="true"></span>
           </template>
         </n-button>
-        <div class="brand">{{ t('app.name') }}</div>
+        <div class="brand">{{ title }}</div>
       </div>
       <div v-if="user && !miniApp" class="topbar-actions">
         <LocaleSwitch />
@@ -90,7 +92,7 @@ onMounted(init);
     </n-layout-content>
     <n-layout-content v-else class="workspace-layout" content-class="workspace-page">
       <n-drawer v-model:show="navOpen" placement="left" :width="260">
-        <n-drawer-content closable :title="t('app.name')">
+        <n-drawer-content closable :title="title">
           <div class="workspace-nav workspace-nav--drawer">
             <n-menu :options="menu" :value="pageKey" @update:value="openPage" />
             <div class="workspace-release">

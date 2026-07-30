@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { notifyPayment, paymentNoticeText } from "@/server/services/telegram/notify";
+import { notifyPayment, notifyReview, paymentNoticeText } from "@/server/services/telegram/notify";
 import type { Order } from "@/server/services/orders/repository";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 import type { AppEnv } from "@/server/types/env";
@@ -23,12 +23,13 @@ const payment: PaymentSnapshot = {
 
 describe("Telegram payment notifications", () => {
   it("formats a copyable order id, custom asset emoji, source, and transaction link", () => {
-    const text = paymentNoticeText(order(), payment, "Telegram (Inline 收款)");
+    const text = paymentNoticeText(order(), payment, "Telegram (Inline 收款)", "BSC 收款");
 
     expect(text).toContain("💰 新订单收款 （60 CNY）");
     expect(text).toContain("订单号：\n<pre>8BD516260F1629CC</pre>");
     expect(text).toContain("订单金额：60 CNY");
     expect(text).toContain('<tg-emoji emoji-id="6222280715564752360">💵</tg-emoji> 8.85 USDT');
+    expect(text).toContain("收款通道：BSC 收款");
     expect(text).toContain("支付时间：2026-04-02 18:12:48");
     expect(text).toContain("订单来源：Telegram (Inline 收款)");
     expect(text).toContain('<a href="https://bscscan.com/tx/0x2b5e0f44c32c6a10aca3aadeb49955104b8b44db98b00acebb50c90a2c873e12">查看交易</a>');
@@ -100,6 +101,38 @@ describe("Telegram payment notifications", () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("sends the review image before the questions and action buttons", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true, result: {} }), {
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const answer = "你通过哪种网络完成付款？\nBEP20\n\n你支付了哪种币种？\nUSDT";
+    const image = new Uint8Array([1, 2, 3]).buffer;
+
+    await notifyReview(env(new Map([["admin_id", "123456"]])), order(), answer, image);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [photoUrl, photoInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(photoUrl).toBe("https://api.telegram.org/bottoken/sendPhoto");
+    expect(photoInit.body).toBeInstanceOf(FormData);
+    expect((photoInit.body as FormData).get("chat_id")).toBe("123456");
+
+    const [messageUrl, messageInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    expect(messageUrl).toBe("https://api.telegram.org/bottoken/sendMessage");
+    const message = JSON.parse(String(messageInit.body));
+    expect(message).toMatchObject({
+      chat_id: 123456,
+      reply_markup: {
+        inline_keyboard: [[
+          { callback_data: "audit:delete:8BD516260F1629CC", text: "❌ 删除订单" },
+          { callback_data: "audit:confirm:8BD516260F1629CC", text: "✅ 确认收款" },
+        ]],
+      },
+    });
+    expect(message.text).toContain("💁 有订单需审核 （60 CNY）");
+    expect(message.text).toContain(answer);
+  });
 });
 
 function order(input: Partial<Order> = {}): Order {
@@ -139,6 +172,7 @@ function env(configs: Map<string, string>, merchantName = "") {
               const value = configs.get(String(values[0]));
               return value == null ? null : { value };
             }
+            if (sql.includes("SELECT name FROM payments")) return { name: "BSC 收款" };
             if (sql.includes("SELECT * FROM merchants WHERE id = ?")) {
               return {
                 callback: null,

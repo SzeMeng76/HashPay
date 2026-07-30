@@ -29,14 +29,17 @@ describe("settings payload", () => {
       domain: "https://Pay.Example.com/admin?x=1",
       fastConfirm: true,
       rateAdjust: 2,
+      title: "  Demo Pay  ",
       timeout: 8,
     });
 
     expect(saved.domain).toBe("https://pay.example.com");
+    expect(saved.title).toBe("Demo Pay");
     expect(configs.get("domain")).toBe("https://pay.example.com");
     expect(configs.get("currency")).toBe("USD");
     expect(configs.get("fast_confirm")).toBe("true");
     expect(configs.get("rate_adjust")).toBe("2");
+    expect(configs.get("title")).toBe("Demo Pay");
     expect(configs.get("timeout")).toBe("8");
     expect(mocks.configureBotMiniApp).toHaveBeenCalledTimes(1);
   });

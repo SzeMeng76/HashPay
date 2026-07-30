@@ -2,6 +2,7 @@ import { jsonParseObject, now, one, run } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import { getOrder } from "@/server/services/orders/repository";
 import { encryptCallbackEnvelope } from "@/server/utils/crypto";
+import { ezfpContext, ezfpNotification, signedEzfpUrl } from "@/server/services/merchants/ezfp";
 import type { AppEnv } from "@/server/types/env";
 
 export async function createNotify(env: AppEnv, orderId: string) {
@@ -29,10 +30,23 @@ export async function resendNotify(env: AppEnv, orderId: string) {
 }
 
 export async function deliverNotify(env: AppEnv, notifyId: number) {
-  const notify = await one<{ attempts: number; callback: string | null; merchant: string; payload_json: string; publicKey: string | null }>(
+  const notify = await one<{
+    attempts: number;
+    callback: string | null;
+    currency: string;
+    description: string | null;
+    merchant: string;
+    merchantNo: string;
+    merchantType: string | null;
+    orderId: string;
+    payload_json: string;
+    payment: string;
+    authKey: string | null;
+  }>(
     env,
     `
-      SELECT n.*, o.callback, o.merchant, m.public_key AS publicKey
+      SELECT n.*, o.callback, o.currency, o.description, o.id AS orderId, o.merchant, o.merchant_no AS merchantNo,
+        o.payment, m.public_key AS authKey, m.type AS merchantType
       FROM notify n
       JOIN orders o ON o.id = n.order_id
       LEFT JOIN merchants m ON m.id = o.merchant
@@ -45,16 +59,43 @@ export async function deliverNotify(env: AppEnv, notifyId: number) {
     await run(env, "UPDATE notify SET status = 'done', updated_at = ? WHERE id = ?", now(), notifyId);
     return;
   }
-  if (!notify.publicKey?.trim()) {
+  if (!notify.authKey?.trim()) {
     await recordFailure(env, notifyId, notify.attempts, "Merchant public key is missing");
     return;
   }
-  const error = await deliveryError(notify.callback, notify.payload_json, notify.merchant, notify.publicKey);
+  let error: string | null;
+  if (notify.merchantType === "ezfp") {
+    const context = ezfpContext(notify.payment);
+    error = context
+      ? await ezfpDeliveryError(
+          notify.callback,
+          ezfpNotification(
+            { currency: notify.currency, description: notify.description, id: notify.orderId, merchantNo: notify.merchantNo },
+            { id: notify.merchant },
+            context,
+          ),
+          notify.authKey,
+        )
+      : "Ezfp order context is missing";
+  } else {
+    error = await deliveryError(notify.callback, notify.payload_json, notify.merchant, notify.authKey);
+  }
   if (error) {
     await recordFailure(env, notifyId, notify.attempts, error);
     return;
   }
   await run(env, "UPDATE notify SET status = 'done', attempts = attempts + 1, updated_at = ? WHERE id = ?", now(), notifyId);
+}
+
+async function ezfpDeliveryError(callback: string, params: Record<string, string>, secret: string) {
+  try {
+    const response = await fetch(signedEzfpUrl(callback, params, secret), { method: "GET" });
+    const text = await response.text();
+    if (!response.ok) return `HTTP ${response.status}`;
+    return text.trim().toLowerCase() === "success" ? null : `Unexpected response: ${text.trim() || "(empty)"}`;
+  } catch (error) {
+    return error instanceof Error ? error.message : "Notify request failed";
+  }
 }
 
 async function deliveryError(callback: string, payload: string, merchant: string, publicKey: string) {

@@ -12,6 +12,7 @@ export interface AppState {
   domain: string | null;
   queue: string | null;
   ready: boolean;
+  title: string;
   username: string;
 }
 
@@ -41,6 +42,7 @@ export interface Checkout {
     network: string;
   }>;
   order: Order;
+  title: string;
 }
 
 export interface Payment {
@@ -55,14 +57,21 @@ export interface Payment {
 }
 
 export interface Merchant {
+  authKey: string;
   callback: string | null;
   createdAt: number;
   id: string;
   name: string;
-  publicKey: string;
   status: "disabled" | "enabled";
-  type: "telegram" | "website";
+  type: "ezfp" | "telegram" | "website";
   updatedAt: number;
+}
+
+export interface MerchantInput {
+  callback: string | null;
+  name: string;
+  status: Merchant["status"];
+  type: Merchant["type"];
 }
 
 export interface Dashboard {
@@ -107,5 +116,6 @@ export interface Settings {
     syncedAt: number;
   };
   rateAdjust: number;
+  title: string;
   timeout: number;
 }
