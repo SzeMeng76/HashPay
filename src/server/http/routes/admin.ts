@@ -7,7 +7,7 @@ import { restoreDefaultBanner, uploadBanner } from "@/server/services/images/ban
 import { createMerchant, deleteMerchant, listMerchants, rotateCredential, updateMerchant, type MerchantInput } from "@/server/services/merchants";
 import { checkOrderPayment, confirmOrder, deleteOrder, getOrderDetail, listOrdersPage, resendNotify } from "@/server/services/orders/manage";
 import { checkDashboard, dashboard } from "@/server/services/app";
-import { adminSettings, saveAdminSettings } from "@/server/services/app/settings";
+import { adminSettings, rebindBot, saveAdminSettings } from "@/server/services/app/settings";
 import { startSetup } from "@/server/services/app/setup";
 import type { HonoEnv } from "@/server/types/env";
 
@@ -88,6 +88,7 @@ app.post("/orders/:id/notify", json((c) => resendNotify(c.env, c.req.param("id")
 // Settings
 app.get("/settings", json((c) => adminSettings(c.env)));
 app.put("/settings", json(async (c) => saveAdminSettings(c.env, await reqJson(c))));
+app.post("/settings/bot/rebind", json((c) => rebindBot(c.env)));
 app.put("/banner", json(async (c) => uploadBanner(c.env, await c.req.arrayBuffer())));
 app.post("/banner/restore", json(async (c) => {
   await restoreDefaultBanner(c.env);

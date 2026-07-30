@@ -1,19 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "@/server/http/api";
-import { normalizeSettingsPayload, saveAdminSettings } from "@/server/services/app/settings";
+import { normalizeSettingsPayload, rebindBot, saveAdminSettings } from "@/server/services/app/settings";
 import type { AppEnv } from "@/server/types/env";
 
 const mocks = vi.hoisted(() => ({
   configureBotMiniApp: vi.fn(),
+  refreshBotInfo: vi.fn(),
 }));
 
 vi.mock("@/server/services/telegram/api", () => ({
   configureBotMiniApp: mocks.configureBotMiniApp,
+  refreshBotInfo: mocks.refreshBotInfo,
 }));
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.configureBotMiniApp.mockResolvedValue(undefined);
+  mocks.refreshBotInfo.mockResolvedValue({ username: "HashPayBot" });
 });
 
 describe("settings payload", () => {
@@ -53,6 +56,12 @@ describe("settings payload", () => {
       timeout: 5,
     })).rejects.toMatchObject(new AppError(400, "errors.domain_invalid"));
     expect(mocks.configureBotMiniApp).not.toHaveBeenCalled();
+  });
+
+  it("refreshes and reconfigures the bound bot", async () => {
+    await expect(rebindBot(env(new Map()))).resolves.toEqual({ username: "HashPayBot" });
+    expect(mocks.refreshBotInfo).toHaveBeenCalledTimes(1);
+    expect(mocks.configureBotMiniApp).toHaveBeenCalledTimes(1);
   });
 });
 

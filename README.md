@@ -324,6 +324,7 @@ X-Signature: <base64-rsa-sha256-signature>
 | --- | --- |
 | [EgdeKey](https://github.com/TGDash/HashPay/wiki/配置教程-%E2%80%90-EgdeKey) | 运行在Cloudflare Wokers 上的发卡系统 |
 | [易支付接口](https://ezfp.cn/doc.html) | 大部分发卡、商城项目均支持易支付接口 |
+| [WHMCS](https://github.com/ZeroTwoDa/whmcs-hashpay-gateway) | 由 [@ZeroTwoDa](https://github.com/ZeroTwoDa) 维护 |
 
 ## 🔧 维护
 
@@ -332,6 +333,8 @@ X-Signature: <base64-rsa-sha256-signature>
 访问 [Update HashPay](../../actions/workflows/update-hashpay.yml)，点击 **Run workflow** 即可从上游 `tgdash/HashPay` 同步最新代码并自动部署。
 
 更新流程会保留当前实例的 `wrangler.jsonc` 部署资源配置，但自定义代码可能被覆盖。
+
+[没有找到更新的动作？](https://github.com/TGDash/HashPay/wiki/补全更新组件)
 
 ### 安全注意
 

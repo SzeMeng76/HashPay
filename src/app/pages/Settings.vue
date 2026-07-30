@@ -30,6 +30,8 @@ const settings = ref<Settings>({} as Settings);
 const bannerUploading = ref(false);
 const bannerRestoring = ref(false);
 const bannerVersion = ref(Date.now());
+const botModalOpen = ref(false);
+const botRebinding = ref(false);
 
 const bannerSrc = computed(() => `/banner.webp?v=${bannerVersion.value}`);
 const domainError = computed(() => settings.value.domain && !isDomain(settings.value.domain) ? t("setup.domain_invalid") : "");
@@ -66,6 +68,18 @@ async function save() {
   settings.value.domain = toDomain(settings.value.domain);
   title.value = saved.title;
   message.success(t("settings.saved"));
+}
+
+async function rebindBot() {
+  botRebinding.value = true;
+  try {
+    const bot = await api.settings.rebindBot();
+    settings.value.botUsername = bot.username;
+    botModalOpen.value = false;
+    message.success(t("settings.bot_rebound"));
+  } finally {
+    botRebinding.value = false;
+  }
 }
 
 function rateText(value?: number) {
@@ -165,6 +179,14 @@ onMounted(load);
           <DomainInput v-model="settings.domain" />
           <small v-if="domainError" class="muted is-error">{{ domainError }}</small>
         </label>
+        <div class="field-stack">
+          <span>{{ t('settings.bot') }}</span>
+          <n-input :value="settings.botUsername ? `@${settings.botUsername}` : ''" readonly>
+            <template #suffix>
+              <n-button size="small" text type="primary" @click="botModalOpen = true">{{ t('settings.bot_update') }}</n-button>
+            </template>
+          </n-input>
+        </div>
       </div>
     </div>
     <div class="panel grid">
@@ -236,5 +258,26 @@ onMounted(load);
         <n-button :loading="bannerRestoring" secondary @click="restoreBanner">{{ t('settings.banner_restore') }}</n-button>
       </div>
     </div>
+
+    <n-modal v-model:show="botModalOpen">
+      <n-card
+        :bordered="false"
+        :title="t('settings.bot_rebind_title')"
+        class="payment-modal-card"
+        role="dialog"
+        aria-modal="true"
+      >
+        <div class="payment-modal-body grid">
+          <p class="muted">{{ t('settings.bot_rebind_help') }}</p>
+          <p class="muted">{{ t('settings.bot_rebind_after') }}</p>
+          <p class="muted">{{ t('settings.bot_rebind_when') }}</p>
+          <div class="modal-actions">
+            <n-button @click="botModalOpen = false">{{ t('common.cancel') }}</n-button>
+            <span class="modal-actions-spacer"></span>
+            <n-button :loading="botRebinding" type="primary" @click="rebindBot">{{ t('settings.bot_rebind') }}</n-button>
+          </div>
+        </div>
+      </n-card>
+    </n-modal>
   </div>
 </template>
