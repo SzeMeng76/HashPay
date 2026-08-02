@@ -1,3 +1,5 @@
+import Decimal from "decimal.js";
+
 const amountLocale = "en-US";
 
 function normalizeNegativeZero(value: number) {
@@ -5,7 +7,7 @@ function normalizeNegativeZero(value: number) {
 }
 
 export function ceilDisplayAmount(amount: number) {
-  return normalizeNegativeZero(Math.ceil((amount - Number.EPSILON) * 100) / 100);
+  return normalizeNegativeZero(new Decimal(amount).toDecimalPlaces(2, Decimal.ROUND_CEIL).toNumber());
 }
 
 export function formatDisplayAmount(value: unknown, options: Intl.NumberFormatOptions = { maximumFractionDigits: 2 }) {

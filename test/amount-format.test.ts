@@ -16,6 +16,8 @@ describe("amount formatting", () => {
   });
 
   it("keeps normal amount formatting unchanged", () => {
+    expect(formatDisplayAmount(4.9)).toBe("4.9");
+    expect(formatExactDisplayAmount(4.9)).toBe("4.90");
     expect(formatDisplayAmount(20)).toBe("20");
     expect(formatDisplayAmount(20.123)).toBe("20.13");
     expect(formatExactDisplayAmount(20)).toBe("20.00");

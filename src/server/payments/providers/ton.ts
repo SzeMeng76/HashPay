@@ -72,7 +72,7 @@ function match(snapshot: PaymentSnapshot, tx: TxCandidate, created: number, expi
     && tx.timestamp >= created
     && tx.timestamp <= expire
     && key(tx.currency) === asset
-    && (!token || master(tx.raw) === token.contract)
+    && (!token || master(tx.raw).toLowerCase() === token.contract.toLowerCase())
     && sameAmount(tx.amount, snapshot.amount)
     && snapshot.address === tx.to;
 }
