@@ -244,7 +244,7 @@ describe("TON provider", () => {
   const snapshot = payment({ address, amount: 3, driver: "ton" });
 
   it("validates the USDT jetton master before marking a TON payment as paid", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => json({ jetton_transfers: [tonJettonTx({ hash: "ton-paid" })] })));
+    vi.stubGlobal("fetch", vi.fn(async () => json({ jetton_transfers: [tonJettonTx({ hash: "ton-paid", master: tonAssets.usdt.contract.toUpperCase() })] })));
 
     await expect(checkPayment({
       channel: channel({ address, driver: "ton" }),
