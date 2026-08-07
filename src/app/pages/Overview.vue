@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import { useMessage } from "naive-ui";
 import { useRouter } from "vue-router";
 import OrderModal from "@/app/components/OrderModal.vue";
@@ -28,13 +28,14 @@ const view = reactive<{
 });
 let autoLoad: ReturnType<typeof setInterval> | undefined;
 let loading = false;
+const healthState = ref<Dashboard["health"]>([]);
+let healthKnown = false;
 
 const hour = new Date().getHours();
 const greeting = computed(() => hour < 12 ? t("overview.greeting.morning") : hour < 18 ? t("overview.greeting.afternoon") : t("overview.greeting.evening"));
 
 const health = computed(() =>
-  (view.stats?.health ?? [])
-    .filter((item) => item.status === "warn")
+  healthState.value
     .map((item) => ({
       details: t(item.details),
       label: `#${item.id} ${item.name}`,
@@ -58,17 +59,31 @@ async function load() {
     ]);
     view.stats = nextStats;
     view.settings = nextConfig;
+    if (!healthKnown) {
+      healthKnown = true;
+      if (nextStats.health.length) void checkHealth(false);
+    } else if (!sameHealthIds(nextStats.health, healthState.value)) {
+      void checkHealth(false);
+    }
   } finally {
     loading = false;
   }
 }
 
-async function checkHealth() {
+function sameHealthIds(a: Dashboard["health"], b: Dashboard["health"]) {
+  if (a.length !== b.length) return false;
+  const ids = new Set(a.map((item) => item.id));
+  return b.every((item) => ids.has(item.id));
+}
+
+async function checkHealth(showMessage = true) {
   if (view.checkingHealth) return;
   view.checkingHealth = true;
   try {
-    view.stats = await api.dashboard.check();
-    message.success(t("order.check_done"));
+    const stats = await api.dashboard.check();
+    healthState.value = stats.health;
+    if (view.stats) view.stats = { ...view.stats, health: stats.health };
+    if (showMessage) message.success(t("order.check_done"));
   } finally {
     view.checkingHealth = false;
   }
@@ -148,7 +163,7 @@ onBeforeUnmount(() => {
       <section class="panel overview-panel">
         <div class="section-title">
           <h2>{{ t('overview.system_health') }}</h2>
-          <n-button :loading="view.checkingHealth" text type="primary" @click="checkHealth">{{ t('setup.recheck') }}</n-button>
+          <n-button v-if="health.length" :loading="view.checkingHealth" text type="primary" @click="checkHealth()">{{ t('setup.recheck') }}</n-button>
         </div>
         <n-empty v-if="!health.length" class="overview-empty" :description="t('overview.no_health')" />
         <div v-else class="overview-health-list">

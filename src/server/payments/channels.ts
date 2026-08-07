@@ -77,7 +77,7 @@ export async function deletePayment(env: AppEnv, id: number) {
 export function paymentHealth(payment: PaymentChannel) {
   const network = paymentById(payment.driver)?.network ?? payment.driver;
   const summary = { driver: payment.driver, id: payment.id, name: payment.name, network };
-  if (payment.status === "error") return { ...summary, details: "payment.channel_error", status: "warn" };
+  if (payment.status === "error") return { ...summary, details: "", status: "warn" };
   if (!payment.address.trim()) {
     return { ...summary, details: "errors.payment_field_missing", status: "warn" };
   }
@@ -86,7 +86,13 @@ export function paymentHealth(payment: PaymentChannel) {
 
 export async function checkChannels(env: AppEnv, status?: Payment["status"]) {
   const channels = (await listPayments(env)).filter((channel) => channel.status !== "disabled" && (!status || channel.status === status));
-  for (const channel of channels) await recordCheck(env, channel.id, await checkChannel(channel));
+  const errors: Record<number, string> = {};
+  for (const channel of channels) {
+    const result = await checkChannel(channel);
+    await recordCheck(env, channel.id, result);
+    if (result.status === "error") errors[channel.id] = result.error ?? "Payment check failed";
+  }
+  return errors;
 }
 
 export async function recordCheck(env: AppEnv, id: number, result: CheckResult) {

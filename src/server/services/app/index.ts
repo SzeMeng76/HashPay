@@ -69,7 +69,10 @@ export async function dashboard(env: AppEnv) {
   ]);
   return {
     actions,
-    health: payments.filter((payment) => payment.status !== "disabled").map(paymentHealth),
+    health: payments
+      .filter((payment) => payment.status !== "disabled")
+      .map(paymentHealth)
+      .filter((item) => item.status === "warn"),
     orders,
     pending: pending?.count ?? 0,
     trends,
@@ -77,8 +80,12 @@ export async function dashboard(env: AppEnv) {
 }
 
 export async function checkDashboard(env: AppEnv) {
-  await checkChannels(env);
-  return dashboard(env);
+  const errors = await checkChannels(env, "error");
+  const stats = await dashboard(env);
+  return {
+    ...stats,
+    health: stats.health.map((item) => ({ ...item, details: errors[item.id] ?? item.details })),
+  };
 }
 
 async function trendData(env: AppEnv, today: number, rate: RateContext) {

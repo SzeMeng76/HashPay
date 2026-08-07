@@ -55,14 +55,16 @@ describe("payment channels", () => {
     });
     vi.stubGlobal("fetch", vi.fn(async () => new Response("bad gateway", { status: 502 })));
 
-    await checkChannels(env);
+    const errors = await checkChannels(env);
 
     expect(env.status()).toBe("error");
+    expect(errors[1]).toContain("HTTP 502");
     vi.stubGlobal("fetch", vi.fn(async () => json({ data: [] })));
 
-    await checkChannels(env, "error");
+    const recovered = await checkChannels(env, "error");
 
     expect(env.status()).toBe("enabled");
+    expect(recovered).toEqual({});
   });
 });
 

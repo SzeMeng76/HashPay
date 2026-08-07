@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppEnv } from "@/server/types/env";
 
 vi.mock("@/server/payments/channels", () => ({
-  checkChannels: vi.fn(),
+  checkChannels: vi.fn(async () => ({})),
   listPayments: vi.fn(async () => []),
   paymentHealth: vi.fn(),
 }));
@@ -13,14 +13,47 @@ vi.mock("@/server/services/orders/repository", () => ({
   publicOrder: vi.fn((order) => order),
 }));
 
-import { dashboard } from "@/server/services/app";
+import { checkChannels, listPayments, paymentHealth } from "@/server/payments/channels";
+import { checkDashboard, dashboard } from "@/server/services/app";
+
+beforeEach(() => {
+  vi.mocked(checkChannels).mockResolvedValue({});
+  vi.mocked(listPayments).mockResolvedValue([]);
+  vi.mocked(paymentHealth).mockReset();
+});
 
 afterEach(() => {
-  vi.restoreAllMocks();
+  vi.clearAllMocks();
   vi.useRealTimers();
 });
 
 describe("dashboard", () => {
+  it("rechecks only abnormal payment channels", async () => {
+    const target = env(new Map(), []);
+    vi.mocked(checkChannels).mockResolvedValue({ 7: "TON API HTTP 502" });
+    vi.mocked(listPayments).mockResolvedValue([{ status: "error" }] as never);
+    vi.mocked(paymentHealth).mockReturnValue({
+      details: "",
+      driver: "ton",
+      id: 7,
+      name: "TON",
+      network: "ton",
+      status: "warn",
+    });
+
+    const stats = await checkDashboard(target);
+
+    expect(checkChannels).toHaveBeenCalledWith(target, "error");
+    expect(stats.health).toEqual([{
+      details: "TON API HTTP 502",
+      driver: "ton",
+      id: 7,
+      name: "TON",
+      network: "ton",
+      status: "warn",
+    }]);
+  });
+
   it("converts paid order amounts to the admin currency before summarizing", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(Date.parse("2030-01-02T10:20:00+08:00"));
