@@ -46,7 +46,7 @@ export async function scan(input: PaymentCheckInput) {
     const amount = Number(data.amount);
     const coin = key(data.coin);
     if (!sameAmount(amount, order.snapshot.amount) || coin !== key(order.snapshot.currency)) continue;
-    matches.push({ orderId: order.id, time: Math.floor(Date.now() / 1000), txid: String(data.order_id ?? out_id) });
+    matches.push({ amount, orderId: order.id, time: Math.floor(Date.now() / 1000), txid: String(data.order_id ?? out_id) });
   }
   return matches;
 }

@@ -385,6 +385,16 @@ a {
   font-size: 12px;
 }
 
+.update-notice {
+  margin-bottom: 16px;
+}
+
+.update-guide {
+  color: #2080f0;
+  margin-left: 6px;
+  text-underline-offset: 3px;
+}
+
 .workspace-content {
   background: #ffffff;
   min-height: inherit;
@@ -624,6 +634,27 @@ a {
   align-items: center;
   display: flex;
   min-height: 34px;
+}
+
+.monitor-extra {
+  margin-top: 12px;
+}
+
+.match-tolerance-fields {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 440px;
+}
+
+.match-tolerance-fields label {
+  display: grid;
+  gap: 6px;
+}
+
+.match-tolerance-fields label span {
+  color: #6b7280;
+  font-size: 12px;
 }
 
 .rate-preview-box strong {

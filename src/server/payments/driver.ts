@@ -18,7 +18,7 @@ import {
   payments,
   type Payment,
 } from "@/shared/payments";
-import { ceilAmount } from "@/shared/amount";
+import { ceilAmount, type AmountTolerance } from "@/shared/amount";
 import type { Order } from "@/server/services/orders/repository";
 import type { PaymentSnapshot } from "@/shared/types/domain";
 
@@ -34,6 +34,7 @@ export interface PaymentCheckInput {
   channel?: PaymentChannel;
   fastConfirm: boolean;
   orders: PaymentCheckOrder[];
+  tolerance?: AmountTolerance | null;
 }
 
 export interface PaymentCheckOrder {
@@ -53,6 +54,7 @@ export interface PaymentCheckResult extends CheckResult {
 }
 
 export interface PaymentCheckMatch {
+  amount?: number;
   orderId: string;
   time?: number;
   txid?: string;
@@ -81,6 +83,7 @@ const providers: Record<string, Provider> = {
   solana: { check: checkSolana, scan: scanSolana, scheduled: true },
   ton: { check: checkTon, scan: scanTon, scheduled: true },
   trc20: { check: checkTrc20, scan: scanTrc20, scheduled: true },
+  xlayer: { check: checkEvm, scan: scanEvm, scheduled: true },
 };
 
 const creators: Partial<Record<string, Create>> = {

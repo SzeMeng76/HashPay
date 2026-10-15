@@ -56,13 +56,15 @@ async function save() {
     message.error(t("setup.domain_invalid"));
     return;
   }
+  const matchMin = Number(settings.value.matchMin ?? 0);
+  const matchMax = Number(settings.value.matchMax ?? 1);
+  const { botUsername: _bot, marketRates: _rates, ...current } = settings.value;
   const saved = await api.settings.save({
-    currency: settings.value.currency,
+    ...current,
     domain: siteUrl.value,
-    fastConfirm: settings.value.fastConfirm,
-    rateAdjust: settings.value.rateAdjust,
-    title: settings.value.title,
-    timeout: settings.value.timeout,
+    dynamicMatch: current.dynamicMatch === true,
+    matchMax,
+    matchMin,
   });
   settings.value = saved;
   settings.value.domain = toDomain(settings.value.domain);
@@ -240,6 +242,29 @@ onMounted(load);
             </div>
           </n-form-item-gi>
         </n-grid>
+        <n-form-item class="monitor-extra" :label="t('settings.dynamic_match')" :show-feedback="false">
+          <div class="setting-form-control">
+            <div class="setting-switch-control">
+              <n-switch v-model:value="settings.dynamicMatch" />
+            </div>
+            <small>{{ t('settings.dynamic_match_help') }}</small>
+          </div>
+        </n-form-item>
+        <n-form-item v-if="settings.dynamicMatch" :label="t('settings.match_tolerance')" :show-feedback="false">
+          <div class="setting-form-control">
+            <div class="match-tolerance-fields">
+              <label>
+                <span>{{ t('settings.match_min') }}</span>
+                <n-input-number v-model:value="settings.matchMin" :min="0" placeholder="0" :step="0.01" />
+              </label>
+              <label>
+                <span>{{ t('settings.match_max') }}</span>
+                <n-input-number v-model:value="settings.matchMax" :min="0" placeholder="1" :step="0.01" />
+              </label>
+            </div>
+            <small>{{ t('settings.match_tolerance_help') }}</small>
+          </div>
+        </n-form-item>
       </n-form>
     </div>
     <div class="panel grid">

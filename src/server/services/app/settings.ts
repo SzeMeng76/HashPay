@@ -2,7 +2,7 @@ import Decimal from "decimal.js";
 import { getConfig, setConfig, setConfigs } from "@/server/db";
 import { AppError } from "@/server/http/api";
 import { configureBotMiniApp, refreshBotInfo } from "@/server/services/telegram/api";
-import { ceilAmount } from "@/shared/amount";
+import { ceilAmount, type AmountTolerance } from "@/shared/amount";
 import { toHttpsSiteUrl } from "@/shared/domain";
 import type { AppEnv } from "@/server/types/env";
 
@@ -35,7 +35,10 @@ const defaultTimeoutMinutes = 5;
 
 export interface SystemSettings {
   currency: string;
+  dynamicMatch: boolean;
   fastConfirm: boolean;
+  matchMax: number;
+  matchMin: number;
   rateAdjust: number;
   timeout: number;
 }
@@ -82,7 +85,10 @@ export async function saveAdminSettings(env: AppEnv, input: Record<string, unkno
   await setConfigs(env, {
     currency: settings.currency,
     domain,
+    dynamic_match: String(settings.dynamicMatch),
     fast_confirm: String(settings.fastConfirm),
+    match_max: String(settings.matchMax),
+    match_min: String(settings.matchMin),
     rate_adjust: String(settings.rateAdjust),
     title,
     timeout: String(settings.timeout),
@@ -107,18 +113,29 @@ function publicMarketRates(rates: MarketRates) {
 }
 
 export async function systemSettings(env: AppEnv): Promise<SystemSettings> {
-  const [currency, timeout, rateAdjust, fastConfirm] = await Promise.all([
+  const [currency, timeout, rateAdjust, fastConfirm, dynamicMatch, matchMin, matchMax] = await Promise.all([
     getConfig(env, "currency"),
     getConfig(env, "timeout"),
     getConfig(env, "rate_adjust"),
     getConfig(env, "fast_confirm"),
+    getConfig(env, "dynamic_match"),
+    getConfig(env, "match_min"),
+    getConfig(env, "match_max"),
   ]);
   return {
     currency: normalizeCurrency(currency || "CNY"),
+    dynamicMatch: dynamicMatch === "true",
     fastConfirm: fastConfirm === "true",
+    matchMax: normalizeMatchBound(matchMax, 1),
+    matchMin: normalizeMatchBound(matchMin, 0),
     rateAdjust: normalizeRateAdjust(rateAdjust),
     timeout: normalizeTimeoutMinutes(timeout),
   };
+}
+
+export function toleranceOf(settings: Pick<SystemSettings, "dynamicMatch" | "matchMax" | "matchMin">): AmountTolerance | null {
+  if (!settings.dynamicMatch) return null;
+  return { max: settings.matchMax, min: settings.matchMin };
 }
 
 export async function rateContext(env: AppEnv): Promise<RateContext> {
@@ -141,9 +158,14 @@ export function payAmount(amount: number, from: string, to: string, rate: RateCo
 }
 
 export function normalizeSettingsPayload(input: Record<string, unknown>) {
+  const matchMin = normalizeMatchBound(input.matchMin, 0);
+  const matchMax = normalizeMatchBound(input.matchMax, 1);
   return {
     currency: normalizeCurrency(String(input.currency ?? "CNY")),
+    dynamicMatch: input.dynamicMatch === true || input.dynamicMatch === "true",
     fastConfirm: input.fastConfirm === true || input.fastConfirm === "true",
+    matchMax,
+    matchMin,
     rateAdjust: normalizeRateAdjust(input.rateAdjust),
     timeout: normalizeTimeoutMinutes(input.timeout),
   };
@@ -158,6 +180,14 @@ function normalizeRateAdjust(value: unknown) {
   const parsed = Number(value ?? 0);
   if (!Number.isFinite(parsed)) return 0;
   return Math.min(Math.max(parsed, -99), 200);
+}
+
+function normalizeMatchBound(value: unknown, fallback: number) {
+  if (value == null || (typeof value === "string" && !value.trim())) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  const rounded = Math.round(parsed * 1e8) / 1e8;
+  return Math.min(Math.max(rounded, 0), 1_000_000);
 }
 
 function normalizeTimeoutMinutes(value: unknown) {

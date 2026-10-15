@@ -3,7 +3,6 @@ import type { PaymentChannel } from "@/server/payments/channels";
 import type { PaymentCheckInput } from "@/server/payments/driver";
 import { paymentMatches } from "@/server/payments/match";
 import { fetchJson, fetchText, host, reason } from "@/server/utils/http";
-import { sameAmount } from "@/shared/amount";
 import { evmAssets, key } from "@/shared/payments";
 import type { TxCandidate } from "@/shared/types/domain";
 import type { PaymentSnapshot } from "@/shared/types/domain";
@@ -25,7 +24,9 @@ const chains: Record<string, Chain> = {
     rpc: "https://bsc.rpc.blxrbdn.com",
   },
   erc20: { blockSeconds: 12, explorer: "https://eth.blockscout.com", native: "eth" },
-  polygon: { blockSeconds: 2, explorer: "https://polygon.blockscout.com", native: "matic" },
+  polygon: { blockSeconds: 2, native: "matic", rpc: "https://gateway.tenderly.co/public/polygon" },
+  // Official rpc.xlayer.tech rejects eth_getLogs ranges above 100 blocks.
+  xlayer: { blockSeconds: 1, native: "okb", rpc: "https://xlayer-mainnet.rpc.sentio.xyz" },
 };
 
 export async function check(channel: PaymentChannel) {
@@ -40,7 +41,7 @@ export async function check(channel: PaymentChannel) {
 
 export async function scan(input: PaymentCheckInput) {
   const txs = await transactions(input);
-  return paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash }));
+  return paymentMatches(input.orders, txs, match, (tx) => ({ time: tx.timestamp, txid: tx.hash }), input.tolerance);
 }
 
 async function transactions(input: PaymentCheckInput) {
@@ -79,16 +80,17 @@ async function blockscout(baseUrl: string, address: string, asset: string, netwo
   }
 
   const payload = await json<{ items?: unknown[] }>(`${baseUrl}/api/v2/addresses/${address}/transactions`);
-  return (payload.items ?? []).map((item) => {
+  return (payload.items ?? []).flatMap((item) => {
     const row = item as Record<string, unknown>;
-    return {
+    if (row.status !== "ok") return [];
+    return [{
       amount: amount(row.value, 18),
       currency: asset,
       hash: String(row.hash ?? ""),
       raw: row,
       timestamp: time(row.timestamp),
       to: addressOf(row.to),
-    };
+    }];
   });
 }
 
@@ -121,13 +123,13 @@ function match(snapshot: PaymentSnapshot, tx: TxCandidate, created: number, expi
   const network = key(snapshot.driver);
   const asset = key(snapshot.currency);
   const token = evmAssets[network]?.[asset];
-  return Boolean(tx.hash)
+  const valid = Boolean(tx.hash)
     && tx.timestamp >= created
     && tx.timestamp <= expire
     && key(tx.currency) === asset
     && (!token || lower(contract(tx.raw)) === lower(token.contract))
-    && sameAmount(tx.amount, snapshot.amount)
     && lower(snapshot.address) === lower(tx.to);
+  return valid ? tx.amount : null;
 }
 
 async function json<T>(url: string) {

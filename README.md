@@ -47,6 +47,7 @@ HashPay 是一款运行在 Cloudflare Wokers 上的加密货币收款网关。
 | 链上网络 | Base | USDT、USDC、ETH |
 | 链上网络 | BNB Smart Chain / BEP20 | USDT、USDC、BNB |
 | 链上网络 | Polygon | USDT、USDC、MATIC |
+| 链上网络 | X Layer | USDT、USDC |
 | 链上网络 | TON | USDT、GRAM |
 | 链上网络 | Aptos | USDT、USDC |
 | 链上网络 | Solana | USDT、USDC |
@@ -325,6 +326,7 @@ X-Signature: <base64-rsa-sha256-signature>
 | [EgdeKey](https://github.com/TGDash/HashPay/wiki/配置教程-%E2%80%90-EgdeKey) | 运行在Cloudflare Wokers 上的发卡系统 |
 | [易支付接口](https://ezfp.cn/doc.html) | 大部分发卡、商城项目均支持易支付接口 |
 | [WHMCS](https://github.com/ZeroTwoDa/whmcs-hashpay-gateway) | 由 [@ZeroTwoDa](https://github.com/ZeroTwoDa) 维护 |
+| [ACG-Faka](https://github.com/ZeroTwoDa/acg-faka-hashpay) | 异次元发卡 / 荔枝发卡，由 [@ZeroTwoDa](https://github.com/ZeroTwoDa) 维护 |
 
 ## 🔧 维护
 

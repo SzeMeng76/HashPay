@@ -64,6 +64,66 @@ describe("TRC20 provider", () => {
     })).resolves.toMatchObject({ matches: [], status: "ok" });
   });
 
+  it.each([false, true])("rejects the reported USDT approval with fastConfirm=%s", async (fastConfirm) => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({ data: [{
+      transaction_id: "4e5f31cff97fe901820a8dbcb815e5fe009bb2552e747c5e944cb8ef92bff6f7",
+      token_info: { symbol: "USDT", address: trc20Assets.usdt.contract, decimals: 6, name: "Tether USD" },
+      block_timestamp: 1791807441000,
+      from: "TDLesDoiXREurTrU4qQw8BzvEEBpBCRE4k",
+      to: snapshot.address,
+      type: "Approval",
+      value: "36000000",
+    }] })));
+
+    await expect(checkPayment({
+      channel: channel({ address: snapshot.address, driver: "trc20" }),
+      fastConfirm,
+      orders: [order({ ...snapshot, amount: 36 }, { createdAt: 1791807400, expireAt: 1791807700 })],
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
+  });
+
+  it.each([undefined, "", "Unknown"])("rejects TRC20 records with type %s", async (type) => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({ data: [{ ...trc20Tx(), type }] })));
+
+    await expect(checkPayment({
+      channel: channel({ address: snapshot.address, driver: "trc20" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
+  });
+
+  it("matches one off-amount payment inside the tolerance", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({
+      data: [trc20Tx({ to: snapshot.address, value: "12550000" })],
+    })));
+
+    await expect(checkPayment({
+      channel: channel({ address: snapshot.address, driver: "trc20" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+      tolerance: { max: 1, min: 0.1 },
+    })).resolves.toMatchObject({
+      matches: [{ amount: 12.55, orderId: "order", txid: "tx" }],
+      status: "ok",
+    });
+  });
+
+  it("leaves an off-amount payment unmatched when another order is also in range", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({
+      data: [trc20Tx({ to: snapshot.address, value: "12550000" })],
+    })));
+
+    await expect(checkPayment({
+      channel: channel({ address: snapshot.address, driver: "trc20" }),
+      fastConfirm: false,
+      orders: [
+        order(snapshot, { id: "order-a" }),
+        order({ ...snapshot, amount: 12.51 }, { id: "order-b" }),
+      ],
+      tolerance: { max: 1, min: 0.1 },
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
+  });
+
   it("matches multiple orders from one chain scan", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({
       data: [
@@ -101,6 +161,44 @@ describe("EVM provider", () => {
       fastConfirm: false,
       orders: [order(snapshot)],
     })).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "0xpaid" }], status: "ok" });
+  });
+
+  it.each(["error", undefined])("rejects a reverted native transfer when status is %s", async (status) => {
+    const snapshot = payment({ address, amount: 0.05, currency: "eth", driver: "erc20" });
+    vi.stubGlobal("fetch", vi.fn(async () => json({
+      items: [{
+        hash: "0xreverted",
+        status,
+        timestamp: "1970-01-01T00:02:00Z",
+        to: { hash: address },
+        value: "50000000000000000",
+      }],
+    })));
+
+    await expect(checkPayment({
+      channel: channel({ address, assets: ["eth"], driver: "erc20" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
+  });
+
+  it("matches a successful native transfer", async () => {
+    const snapshot = payment({ address, amount: 0.05, currency: "eth", driver: "erc20" });
+    vi.stubGlobal("fetch", vi.fn(async () => json({
+      items: [{
+        hash: "0xnative",
+        status: "ok",
+        timestamp: "1970-01-01T00:02:00Z",
+        to: { hash: address },
+        value: "50000000000000000",
+      }],
+    })));
+
+    await expect(checkPayment({
+      channel: channel({ address, assets: ["eth"], driver: "erc20" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "0xnative" }], status: "ok" });
   });
 
   it("rejects fake EVM token contracts", async () => {
@@ -237,6 +335,36 @@ describe("EVM provider", () => {
     expect(result.error).toContain("eth_blockNumber");
     expect(result.error).toContain("HTTP 502 bad gateway");
   });
+
+  it.each([
+    ["usdt", "2500000"],
+    ["usdc", "8800000"],
+  ] as const)("checks X Layer %s payments through public RPC", async (asset, value) => {
+    const now = 1_800_000_120;
+    vi.useFakeTimers();
+    vi.setSystemTime(now * 1000);
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string };
+      if (body.method === "eth_blockNumber") return json({ result: "0x64" });
+      if (body.method === "eth_getLogs") return json({ result: [{ blockTimestamp: hex(now), data: hex(Number(value)), transactionHash: "0xxlayer-paid" }] });
+      return json({ result: null });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(checkPayment({
+      channel: channel({ address, driver: "xlayer", id: 6, name: "X Layer" }),
+      fastConfirm: false,
+      orders: [order(payment({ address, amount: asset === "usdt" ? 2.5 : 8.8, currency: asset, driver: "xlayer" }), {
+        createdAt: now - 10,
+        expireAt: now + 100,
+        id: "xlayer-order",
+      })],
+    })).resolves.toMatchObject({ matches: [{ orderId: "xlayer-order", txid: "0xxlayer-paid" }], status: "ok" });
+
+    const logBody = JSON.parse(String((fetchMock.mock.calls[1]?.[1] as RequestInit | undefined)?.body ?? "{}")) as { params?: Array<{ address?: string }> };
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://xlayer-mainnet.rpc.sentio.xyz");
+    expect(logBody.params?.[0]?.address).toBe(evmAssets.xlayer[asset].contract);
+  });
 });
 
 describe("TON provider", () => {
@@ -262,6 +390,32 @@ describe("TON provider", () => {
       orders: [order(snapshot)],
     })).resolves.toMatchObject({ matches: [], status: "ok" });
   });
+
+  it.each([true, undefined])("rejects an aborted TON jetton transfer when transaction_aborted is %s", async (aborted) => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({ jetton_transfers: [tonJettonTx({ aborted: aborted ?? null, hash: "ton-aborted" })] })));
+
+    await expect(checkPayment({
+      channel: channel({ address, driver: "ton" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
+  });
+
+  it("matches a completed GRAM transfer and ignores a bounced one", async () => {
+    const gram = payment({ address, amount: 3, currency: "gram", driver: "ton" });
+    vi.stubGlobal("fetch", vi.fn(async () => json({
+      transactions: [
+        tonTx({ aborted: true, hash: "ton-bounced" }),
+        tonTx({ hash: "ton-paid" }),
+      ],
+    })));
+
+    await expect(checkPayment({
+      channel: channel({ address, assets: ["gram"], driver: "ton" }),
+      fastConfirm: false,
+      orders: [order(gram)],
+    })).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "ton-paid" }], status: "ok" });
+  });
 });
 
 describe("Aptos provider", () => {
@@ -270,6 +424,29 @@ describe("Aptos provider", () => {
 
   it("validates Aptos asset metadata before marking a payment as paid", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({ data: { fungible_asset_activities: [aptosTx({ address })] } })));
+
+    await expect(checkPayment({
+      channel: channel({ address, driver: "aptos" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [{ orderId: "order", txid: "12345" }], status: "ok" });
+  });
+
+  it.each(["0x1::fungible_asset::Withdraw", "0x1::aptos_coin::GasFeeEvent", "deposit"])(
+    "rejects an Aptos activity that is not a deposit when type is %s",
+    async (type) => {
+      vi.stubGlobal("fetch", vi.fn(async () => json({ data: { fungible_asset_activities: [aptosTx({ address, type })] } })));
+
+      await expect(checkPayment({
+        channel: channel({ address, driver: "aptos" }),
+        fastConfirm: false,
+        orders: [order(snapshot)],
+      })).resolves.toMatchObject({ matches: [], status: "ok" });
+    },
+  );
+
+  it("matches the legacy Aptos deposit event", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({ data: { fungible_asset_activities: [aptosTx({ address, type: "0x1::fungible_asset::DepositEvent" })] } })));
 
     await expect(checkPayment({
       channel: channel({ address, driver: "aptos" }),
@@ -720,6 +897,7 @@ function payment(input: Partial<PaymentSnapshot>): PaymentSnapshot {
 
 function trc20Tx(input: Partial<{ contract: string; hash: string; timestamp: number; to: string; value: string }> = {}) {
   return {
+    type: "Transfer",
     block_timestamp: (input.timestamp ?? 120) * 1000,
     to: input.to ?? "TY1ykSFu8N4mZgxsJABLGdhcs91h1N2qR2",
     token_info: { address: input.contract ?? trc20Assets.usdt.contract, decimals: 6, symbol: "USDT" },
@@ -738,23 +916,33 @@ function evmTokenTx(input: { address: string; contract: string; hash: string; va
   };
 }
 
-function tonJettonTx(input: Partial<{ hash: string; master: string }> = {}) {
+function tonJettonTx(input: Partial<{ aborted: boolean | null; hash: string; master: string }> = {}) {
   return {
     amount: "3000000",
     jetton_master: input.master ?? tonAssets.usdt.contract,
+    ...(input.aborted === null ? {} : { transaction_aborted: input.aborted ?? false }),
     transaction_hash: input.hash ?? "ton-paid",
     transaction_now: 120,
   };
 }
 
-function aptosTx(input: { address: string; asset?: string }) {
+function tonTx(input: Partial<{ aborted: boolean; hash: string }> = {}) {
+  return {
+    description: { aborted: input.aborted ?? false },
+    hash: input.hash ?? "ton-paid",
+    in_msg: { value: "3000000000" },
+    now: 120,
+  };
+}
+
+function aptosTx(input: { address: string; asset?: string; type?: string }) {
   return {
     amount: "4200000",
     asset_type: input.asset ?? aptosAssets.usdc.contract,
     owner_address: input.address,
     transaction_timestamp: "1970-01-01T00:02:00Z",
     transaction_version: "12345",
-    type: "deposit",
+    type: input.type ?? "0x1::fungible_asset::Deposit",
   };
 }
 

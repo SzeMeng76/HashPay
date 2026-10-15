@@ -109,7 +109,10 @@ export interface Settings {
   botUsername: string;
   currency: string;
   domain: string;
+  dynamicMatch: boolean;
   fastConfirm: boolean;
+  matchMax: number;
+  matchMin: number;
   marketRates: {
     assetUSD: Record<string, number>;
     fiatPerUSD: Record<string, number>;
@@ -120,3 +123,5 @@ export interface Settings {
   title: string;
   timeout: number;
 }
+
+export type SettingsInput = Omit<Settings, "botUsername" | "marketRates">;
