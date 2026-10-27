@@ -198,6 +198,8 @@ function money(amount: unknown, currency: unknown) {
         <template v-else>
           <PaymentSelector
             :disabled="expired(checkout.order)"
+            :initial-asset="changingPayment ? checkout.order.payment.currency : ''"
+            :initial-network="changingPayment ? checkout.order.payment.driver : ''"
             :options="paymentOptions"
             @select="selectPayment"
           />
@@ -289,8 +291,6 @@ function money(amount: unknown, currency: unknown) {
       v-model:show="reviewVisible"
       v-if="checkout"
       :order="checkout.order"
-      :order-id="orderId"
-      :payment="checkout.order.payment"
       @submitted="load"
     />
   </n-layout>

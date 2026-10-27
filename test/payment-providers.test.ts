@@ -251,7 +251,40 @@ describe("EVM provider", () => {
     })).resolves.toMatchObject({ matches: [{ orderId: "bsc-order", txid: "0xbsc-paid" }], status: "ok" });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://bsc.rpc.blxrbdn.com");
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://bsc-rpc.publicnode.com");
+  });
+
+  it("splits an older BSC order into short log ranges", async () => {
+    const now = 1_800_000_120;
+    vi.useFakeTimers();
+    vi.setSystemTime(now * 1000);
+    const spans: number[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        method?: string;
+        params?: Array<{ fromBlock?: string; toBlock?: string }>;
+      };
+      if (body.method === "eth_blockNumber") return json({ result: "0x1000" });
+      if (body.method === "eth_getLogs") {
+        const from = Number.parseInt(body.params?.[0]?.fromBlock ?? "0", 16);
+        const to = Number.parseInt(body.params?.[0]?.toBlock ?? "0", 16);
+        spans.push(to - from);
+        return json({ result: [] });
+      }
+      return json({ result: null });
+    }));
+
+    await checkPayment({
+      channel: channel({ address, driver: "bep20" }),
+      fastConfirm: false,
+      orders: [order(payment({ address, amount: 0.01, driver: "bep20" }), {
+        createdAt: now - 400,
+        expireAt: now + 100,
+      })],
+    });
+
+    expect(spans.length).toBeGreaterThan(1);
+    expect(spans.every((span) => span <= 99)).toBe(true);
   });
 
   it("matches BSC payments when the RPC rejects the latest log range tag", async () => {
@@ -530,6 +563,22 @@ describe("Solana provider", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects Solana instructions that are not SPL transfers", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string };
+      if (body.method === "getTokenAccountsByOwner") return json({ result: { value: [{ pubkey: account }] } });
+      if (body.method === "getSignaturesForAddress") return json({ result: [{ blockTime: 120, signature: "solana-approve" }] });
+      if (body.method === "getTransaction") return json({ result: solanaTx({ account, type: "approve" }) });
+      return json({ result: null });
+    }));
+
+    await expect(checkPayment({
+      channel: channel({ address, driver: "solana" }),
+      fastConfirm: false,
+      orders: [order(snapshot)],
+    })).resolves.toMatchObject({ matches: [], status: "ok" });
+  });
+
   it("rejects Solana transfers with a different mint", async () => {
     vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? "{}")) as { method?: string };
@@ -719,6 +768,60 @@ describe("Binance Pay provider", () => {
       params: { detail: "Binance API 返回中没有账户ID" },
       status: 400,
     });
+  });
+
+  it("creates a Binance receive link from the order amount", async () => {
+    const fetchMock = vi.fn(async () => json({
+      code: "000000",
+      data: { shareLink: "https://app.binance.com/uni-qr/preview" },
+      status: "SUCCESS",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const channel = binanceChannel();
+    channel.data.aiApiKey = "ai-key";
+    channel.data.aiSecretKey = "ai-secret";
+
+    const out = await createPayment(channel, okpayOrder(), payment({
+      address: "34355667",
+      amount: 12.5,
+      currency: "usdt",
+      driver: "binance",
+    }));
+
+    expect(out).toMatchObject({ url: "https://app.binance.com/uni-qr/preview" });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://bpay.binanceapi.com/binancepay/openapi/user/c2c/createReceive");
+    expect(String(init.body)).toBe(JSON.stringify({ amount: "12.5", currency: "USDT", description: "okpay-order" }));
+    const headers = init.headers as Record<string, string>;
+    expect(headers["BinancePay-Certificate-SN"]).toBe("ai-key");
+    expect(headers["X-Forwarded-For"]).toBe("1.1.1.1");
+    expect(headers["BinancePay-Signature"]).toMatch(/^[A-F0-9]+$/);
+  });
+
+  it("leaves Binance checkout on the account id when the receive link fails", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      code: "400004",
+      errorMessage: "Invalid API-key, IP, or permissions for action.",
+    }), { status: 400, headers: { "content-type": "application/json" } })));
+    const channel = binanceChannel();
+    channel.data.aiApiKey = "ai-key";
+    channel.data.aiSecretKey = "ai-secret";
+
+    const out = await createPayment(channel, okpayOrder(), payment({ address: "34355667", driver: "binance" }));
+
+    expect(out.url).toBeUndefined();
+    expect(error).toHaveBeenCalledWith('binance receive link HTTP 400 {"code":"400004","errorMessage":"Invalid API-key, IP, or permissions for action."}');
+  });
+
+  it("leaves Binance checkout on the account id without AI Pay keys", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const out = await createPayment(binanceChannel(), okpayOrder(), payment({ address: "34355667", driver: "binance" }));
+
+    expect(out.url).toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("matches payments received by Binance ID", async () => {
@@ -976,7 +1079,7 @@ function aptosTx(input: { address: string; asset?: string; type?: string }) {
   };
 }
 
-function solanaTx(input: { account: string; err?: unknown; mint?: string }) {
+function solanaTx(input: { account: string; err?: unknown; mint?: string; programId?: string; type?: string }) {
   return {
     blockTime: 120,
     meta: { err: input.err ?? null, innerInstructions: [] },
@@ -989,8 +1092,9 @@ function solanaTx(input: { account: string; err?: unknown; mint?: string }) {
               mint: input.mint ?? solanaAssets.usdc.contract,
               tokenAmount: { amount: "5250000", decimals: 6, uiAmountString: "5.25" },
             },
-            type: "transferChecked",
+            type: input.type ?? "transferChecked",
           },
+          programId: input.programId ?? "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
         }],
       },
     },

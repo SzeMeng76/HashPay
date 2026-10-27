@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import AppIcon from "@/app/components/AppIcon.vue";
+import NSegmented from "@/app/components/NSegmented.vue";
 import * as pay from "@/app/payments";
 import { formatDisplayAmount as formatAmount } from "@/app/utils/format";
 import { useI18n } from "@/app/i18n";
+import { paymentKind, paymentKindOrder, type PaymentKind } from "@/shared/payments";
 
 const props = defineProps<{
   disabled: boolean;
+  initialAsset?: string;
+  initialNetwork?: string;
   options: pay.CheckoutOption[];
 }>();
 
@@ -15,7 +19,8 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-const asset = ref("");
+const asset = ref(pay.assetKey(props.initialAsset));
+const kind = ref<PaymentKind>(props.initialNetwork ? paymentKind(props.initialNetwork) : "chain");
 const assets = computed(() => {
   const map = new Map<string, pay.CheckoutOption[]>();
   for (const option of props.options) {
@@ -29,8 +34,19 @@ const assets = computed(() => {
     networks: options,
   }));
 });
-const networks = computed(() => props.options.filter((item) => item.asset === asset.value));
+const networks = computed(() => props.options.filter((option) => option.asset === asset.value));
+const kinds = computed(() => paymentKindOrder.filter((item) => networks.value.some((option) => paymentKind(option.network) === item)));
+const kindTabs = computed(() => kinds.value.map((item) => ({
+  label: t(`payment.kind.${item}`),
+  tag: item === "chain" ? undefined : t("checkout.zero_fee"),
+  value: item,
+})));
 const selectedAsset = computed(() => assets.value.find((item) => item.asset === asset.value));
+
+function chooseAsset(next: string) {
+  asset.value = next;
+  kind.value = kinds.value[0]!;
+}
 </script>
 
 <template>
@@ -45,7 +61,7 @@ const selectedAsset = computed(() => assets.value.find((item) => item.asset === 
         :key="item.asset"
         :disabled="disabled"
         type="button"
-        @click="asset = item.asset"
+        @click="chooseAsset(item.asset)"
       >
         <span class="checkout-currency-option-main">
           <AppIcon v-if="pay.assetIcon(item.asset)" :name="pay.assetIcon(item.asset)" :label="pay.assetName(item.asset)" />
@@ -68,9 +84,11 @@ const selectedAsset = computed(() => assets.value.find((item) => item.asset === 
       </span>
       <n-button size="small" text type="primary" @click="asset = ''">{{ t('checkout.change_asset') }}</n-button>
     </div>
+    <NSegmented :value="kind" :options="kindTabs" @update:value="kind = $event as PaymentKind" />
     <div class="checkout-network-list">
       <button
         v-for="item in networks"
+        v-show="paymentKind(item.network) === kind"
         :key="item.value"
         :disabled="disabled"
         type="button"

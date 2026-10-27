@@ -40,11 +40,14 @@ const editableFields = computed(() => {
   return [payment.fieldFor(driver)];
 });
 const dataFields = computed(() => currentDriver.value.data ?? []);
+const primaryDataFields = computed(() => dataFields.value.filter((field) => !field.optional));
+const advancedDataFields = computed(() => dataFields.value.filter((field) => field.optional));
 const selectedAssets = computed(() => form.assets);
 const selectedNetwork = computed(() => payment.driverNetwork(currentDriver.value));
 const availableAssets = computed(() => payment.assetsFor(currentDriver.value, selectedNetwork.value));
 const selectedNetworks = computed(() => Object.keys(selection.evm));
 const kindOptions = computed(() => payment.kinds.map((item) => ({ ...item, label: t(item.label) })));
+const driverChoices = payment.kinds.flatMap((item) => payment.choices(payment.drivers, item.value));
 
 async function load() {
   methods.value = await api.payments.list();
@@ -106,7 +109,7 @@ function validate() {
     return false;
   }
 
-  const missingData = !isEdit.value ? dataFields.value.find((field) => !form.data[field.id]?.trim()) : null;
+  const missingData = !isEdit.value ? primaryDataFields.value.find((field) => !form.data[field.id]?.trim()) : null;
   if (missingData) {
     message.error(t("payment.validation.field_required", { field: t(missingData.nameKey) }));
     return false;
@@ -268,6 +271,12 @@ function driverIconLabel(driver: payment.DriverChoice, network = payment.driverN
   return payment.isEvm(driver) ? networkName(payment.evmIconNetwork) : payment.networkName(network);
 }
 
+const channelStatus = {
+  disabled: "common.disabled",
+  enabled: "common.enabled",
+  error: "payment.channel_error",
+} as const;
+
 onMounted(load);
 </script>
 
@@ -293,7 +302,10 @@ onMounted(load);
         </span>
         <div class="pay-info">
           <strong>{{ item.name }} <span class="muted">#{{ item.id }}</span></strong>
-          <p>{{ methodDriver(item) ? payment.networkName(methodDriver(item)!.network) : item.driver }} / {{ item.status === 'disabled' ? t('common.disabled') : item.status === 'error' ? t('payment.channel_error') : t('common.enabled') }}</p>
+          <p>
+            {{ methodDriver(item) ? payment.networkName(methodDriver(item)!.network) : item.driver }} /
+            <span class="pay-status" :class="`is-${item.status}`">{{ t(channelStatus[item.status]) }}</span>
+          </p>
           <div class="chip-row readonly">
             <span v-for="asset in item.assets" :key="`${item.id}-${asset}`">{{ payment.assetName(asset) }}</span>
           </div>
@@ -347,9 +359,10 @@ onMounted(load);
         <div v-if="!isEdit" class="form-section">
           <h3>{{ t("payment.channel_network") }}</h3>
           <n-empty v-if="!drivers.length" :description="t(selection.kind === 'wallet' ? 'payment.network_empty_wallet' : 'payment.network_empty_kind')" />
-          <div v-else class="network-choice-grid">
+          <div v-show="drivers.length" class="network-choice-grid">
             <button
-              v-for="driver in drivers"
+              v-for="driver in driverChoices"
+              v-show="driver.kind === selection.kind"
               :key="driver.id"
               :class="{ 'is-active': form.driver === driver.id }"
               type="button"
@@ -418,7 +431,7 @@ onMounted(load);
               <small v-if="field.help" class="field-help">{{ field.help }}</small>
             </div>
           </template>
-          <div v-for="field in dataFields" :key="field.id" class="form-field-block">
+          <div v-for="field in primaryDataFields" :key="field.id" class="form-field-block">
             <n-form-item :show-label="false" class="field-form-item">
               <n-input
                 v-model:value="form.data[field.id]"
@@ -429,6 +442,21 @@ onMounted(load);
             </n-form-item>
             <small v-if="field.helpKey" class="field-help" v-html="t(field.helpKey)"></small>
           </div>
+          <n-collapse v-if="advancedDataFields.length" class="advanced-fields">
+            <n-collapse-item :title="t('payment.advanced')" name="advanced">
+              <div v-for="field in advancedDataFields" :key="field.id" class="form-field-block">
+                <n-form-item :show-label="false" class="field-form-item">
+                  <n-input
+                    v-model:value="form.data[field.id]"
+                    type="password"
+                    show-password-on="click"
+                    :placeholder="t(field.nameKey)"
+                  />
+                </n-form-item>
+                <small v-if="field.helpKey" class="field-help" v-html="t(field.helpKey)"></small>
+              </div>
+            </n-collapse-item>
+          </n-collapse>
         </div>
       </div>
 
